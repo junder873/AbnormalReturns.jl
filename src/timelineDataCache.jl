@@ -18,212 +18,172 @@
 ##
 ###################################################################
 
-
-
-mutable struct MarketData
-    date_start::Date
-    date_end::Date
-    dates::Vector{Date}
-    cols::Vector{String}
+struct DataMatrix
+    cols::Index
     data::Matrix{<:Real}
-    MarketData() = new()
+    missing_bdays::Union{Nothing, Dict{Symbol, Set{Int}}}
+    dt_min::Date
+    dt_max::Date
+    cal::HolidayCalendar
 end
 
-struct CrspMarketCalendar <: HolidayCalendar end
-
-function BusinessDays.isholiday(::CrspMarketCalendar, dt::Date; calendar_days::Vector{Date}=MARKET_DATA_CACHE.dates)
-    dt ∉ calendar_days
+struct MarketData
+    calendar::MarketCalendar
+    colmapping::Dict{Symbol, Symbol}
+    marketdata::DataMatrix
+    firmdata::Dict{Int, DataMatrix}
 end
 
-function BusinessDays.isbday(hc::CrspMarketCalendar, dt::Date)::Bool
-    if BusinessDays._getcachestate(hc)
-        return isbday(BusinessDays._getholidaycalendarcache(hc), dt)
-    else
-        return !isholiday(hc, dt)
+struct CombinedData # this is the component that is tables.jl compatible
+    cols::Index
+    data::Matrix{<:Real}
+    dates::Vector{Date}
+    function Combinedata(cols, data)
+        @assert length(cols) == size(data, 2) "Dimensions are mismatched"
+        new(cols, data)
+    end
+    function Combinedata(cols, data, dates)
+        @assert length(dates) == size(data, 1) "Dimensions are mismatched"
+        @assert length(cols) == size(data, 2) "Dimensions are mismatched"
+        new(cols, data, dates)
     end
 end
 
-struct FirmData
-    date_start::Date
-    date_end::Date
-    missing_bday::Union{Nothing, Vector{UInt32}}
-    data::Vector{<:Real}
-    function FirmData(d1, d2, missing_bday, data)
-        @assert d2 >= d1 "End Date must be greater than Start Date"
-        @assert missing_bday === nothing || issorted(missing_bday) "Vector of missing days must be sorted"
-        new(d1, d2, missing_bday, data)
-    end
-end
 
-const FIRM_DATA_CACHE = Dict{Int, Dict{String, FirmData}}()
-const MARKET_DATA_CACHE = MarketData()
-const Warn_Settings = Dict{String, Bool}(
-    "firm_dates_range" => false,
-    "market_dates_range" => true
-)
-
-function update_market_data!(d1, d2, dates, cols, data)
-    @assert d2 >= d1 "End Date must be greater than Start Date"
-    @assert all(d1 .<= dates .<= d2) "All dates must be between start and end date"
-    @assert length(cols) == size(data)[2] "Number of column names must be same as columns of matrix"
-    @assert length(dates) == size(data)[1] "Number of rows must be same as dates"
-    @assert unique(cols) == cols "Column names must be unique"
-
-    MARKET_DATA_CACHE.date_start = d1
-    MARKET_DATA_CACHE.date_end = d2
-    MARKET_DATA_CACHE.dates = dates
-    MARKET_DATA_CACHE.cols = cols
-    MARKET_DATA_CACHE.data = data
-end
-
-"""
-    FirmData(
-        df::DataFrame;
-        date_col="date",
-        id_col="permno",
-        valuecols=nothing
-    )
-
-Creates the cached data for firms. Does some initial cleaning (dropmissing and sort)
-and then assigns the values to a Dictionary (typically with Permno as a key) with the values
-as vectors in a second Dictionary.
-"""
-function FirmData(
-    df::DataFrame;
-    date_col="date",
-    id_col="permno",
-    valuecols=nothing
-)
-    if valuecols === nothing
-        valuecols = [n for n in names(df) if n ∉ [date_col, id_col]]
-    end
-    if !isdefined(MARKET_DATA_CACHE, :data)
-        temp = unique(df[:, [date_col]])
-        MarketData(temp; date_col)
-    end
-    df = dropmissing(df, [id_col, date_col])
-    check_all_businessdays(unique(df[:, date_col]))
-    if any(nonunique(df, [id_col, date_col]))
-        @error("There are duplicate id-date rows in the dataframe")
-    end
-
-    df = select(df, vcat([id_col, date_col], string.(valuecols)))
-    dropmissing!(df, [id_col, date_col])
-    sort!(df)
-
-
-    for col in string.(valuecols)
-        temp = select(df, [id_col, date_col, col])
-        dropmissing!(temp)
-        
-        gdf = groupby(temp, id_col)
-        for (i, g) in enumerate(gdf)
-            if !haskey(FIRM_DATA_CACHE, keys(gdf)[i][1])
-                FIRM_DATA_CACHE[keys(gdf)[i][1]] = Dict{String, FirmData}()
-            end
-            FIRM_DATA_CACHE[keys(gdf)[i][1]][col] = FirmData(
-                g[1, date_col],
-                g[end, date_col],
-                find_missing_bday(g[:, date_col]; perform_checks=false),
-                g[:, col]
-            )
-        end
-    end
-end
-
-"""
-    MarketData(
-        df::DataFrame;
-        date_col="date",
-        valuecols=nothing,
-        add_intercept=true,
-        force_update=false
-    )
-
-Creates the cached data for the market. Does some initial cleaning and creates a timeline
-of the existing data.
-"""
 function MarketData(
-    df::DataFrame;
-    date_col="date",
-    valuecols=nothing,
-    add_intercept=true,
-    force_update=true
+    df_market,
+    df_firms;
+    date_col_market=:date,
+    date_col_firms=:date,
+    id_col=:permno,
+    valuecols_market=nothing,
+    valuecols_firms=nothing
 )
-    if (
-        !isdefined(MARKET_DATA_CACHE, :data) ||
-        force_update ||
-        (
-            MARKET_DATA_CACHE.date_start <= minimum(df[:, date_col]) &&
-            MARKET_DATA_CACHE.date_end >= maximum(df[:, date_col])
-        )
+    start_time = now()
+    df_market = DataFrame(df_market)
+    df_firms = DataFrame(df_firms)
+    if valuecols_market === nothing
+        valuecols_market = Symbol.([n for n in Symbol.(names(df_market)) if n ∉ [date_col_market]])
+    end
+    if valuecols_firms === nothing
+        valuecols_firms = Symbol.([n for n in Symbol.(names(df_firms)) if n ∉ [date_col_firms, id_col]])
+    end
+
+    println("1 ", Dates.canonicalize(now() - start_time))
+    df_market = select(df_market, vcat([date_col_market], valuecols_market))
+    dropmissing!(df_market)
+    sort!(df_market)
+
+    if any(nonunique(df_market, [date_col_market]))
+        @error("There are duplicate date rows in the market data")
+    end
+
+    println("2 ", Dates.canonicalize(now() - start_time))
+    df_firms = select(df_firms, vcat([id_col, date_col_firms], valuecols_firms))
+    dropmissing!(df_firms, [id_col, date_col_firms])
+    sort!(df_firms, [id_col, date_col_firms])
+
+    println("3 ", Dates.canonicalize(now() - start_time))
+
+    if any(nonunique(df_firms, [id_col, date_col_firms]))
+        @error("There are duplicate id-date rows in the firm data")
+    end
+
+    cal = MarketCalendar(df_market[:, date_col_market])
+
+    market_data = DataMatrix(
+        Index(valuecols_market),
+        Matrix(df_market[:, valuecols_market]),
+        nothing,
+        minimum(df_market[:, date_col_market]),
+        maximum(df_market[:, date_col_market]),
+        cal
     )
-        
-        if valuecols === nothing
-            valuecols = [n for n in names(df) if n ≠ date_col]
-        end
-        df = dropmissing(df, vcat([date_col], valuecols))
-        sort!(df, [date_col])
-        if add_intercept
-            df[!, :intercept] = ones(Int, nrow(df))
-            valuecols=vcat(["intercept"], valuecols)
-        end
-        select!(df, vcat([date_col], valuecols))
 
-        update_market_data!(
-            minimum(df[:, date_col]),
-            maximum(df[:, date_col]),
-            df[:, date_col],
-            string.(valuecols),
-            Matrix(df[:, valuecols])
+    println("4 ", Dates.canonicalize(now() - start_time))
+    col_map = Dict{Symbol, Symbol}()
+    for col in Symbol.(valuecols_market)
+        col_map[col] = :marketdata
+    end
+    for col in Symbol.(valuecols_firms)
+        col_map[col] = :firmdata
+    end
+
+    check_all_businessdays(unique(df_firms[:, date_col_firms]), cal)
+
+    println("5 ", Dates.canonicalize(now() - start_time))
+
+    gdf = groupby(df_firms, id_col)
+    println("6 ", Dates.canonicalize(now() - start_time))
+    df_temp = combine(
+        gdf,
+        date_col_firms => (x -> add_missing_bdays(x, cal)) => date_col_firms
+    )
+    if nrow(df_temp) > 0
+        insertcols!(df_temp, [col => missing for col in valuecols_firms]...)
+        df_firms = vcat(
+            df_firms,
+            df_temp
         )
-        if BusinessDays._getcachestate(BusinessDays.symtocalendar(:CrspMarketCalendar))
-            BusinessDays.cleancache("CrspMarketCalendar")
-        end
-
-        BusinessDays.initcache("CrspMarketCalendar", minimum(df[:, date_col]), maximum(df[:, date_col]))
+        sort!(df_firms, [id_col, date_col_firms])
+        gdf = groupby(df_firms, id_col)
     end
+
+    println("7 ", Dates.canonicalize(now() - start_time))
+    
+    df_idx_base = combine(
+        gdf,
+        valuecols_firms .=> find_missings .=> valuecols_firms,
+        date_col_firms .=> [minimum, maximum] .=> [:date_min, :date_max]
+    )
+
+    println("8 ", Dates.canonicalize(now() - start_time))
+    for col in valuecols_firms
+        df_firms[!, col] = coalesce.(
+            df_firms[:, col],
+            zeros(
+                nonmissingtype(eltype(df_firms[:, col])),
+                nrow(df_firms)
+            )
+        )
+    end
+
+    firm_matrix = Matrix(df_firms[:, valuecols_firms])
+
+
+
+    println("9 ", Dates.canonicalize(now() - start_time))
+    firm_data = Dict{Int, DataMatrix}()
+    sizehint!(firm_data, nrow(df_idx_base))
+
+    col_indx = Index(valuecols_firms)
+
+    for i in 1:nrow(df_idx_base)
+        idx = gdf.keymap[(df_idx_base[i, id_col],)]
+        s = gdf.starts[idx]
+        e = gdf.ends[idx]
+        firm_data[df_idx_base[i, id_col]] = DataMatrix(
+            col_indx,
+            firm_matrix[s:e, :],
+            row_to_dict(df_idx_base[i, valuecols_firms]),
+            df_idx_base[i, :date_min],
+            df_idx_base[i, :date_max],
+            cal
+        )
+    end
+
+    println("10 ", Dates.canonicalize(now() - start_time))
+
+    MarketData(
+        cal,
+        col_map,
+        market_data,
+        firm_data
+    )
 end
 
-"""
-    data_range(timed_data::TimelineData, d1::Date, d2::Date)
-
-    data_range(firm_data::FirmData, mkt_data::MarketData, d1::Date, d2::Date)
-
-Provides the data range based on the dates provided. If only one TimelineData type is provided,
-returns a range (i.e., 15:60) that corresponds to the data stored in the type. If firm and market
-data are provided, then returns a vector of integers to make sure the number of rows provided
-in the market matrix matches the length of the data vector for the firm.
-"""
-function data_range(data_start::Date, d1::Date, d2::Date, not_range::Union{Nothing, AbstractVector}=nothing)
-    s = bdayscount("CrspMarketCalendar", data_start, d1) + 1
-    e = s + bdayscount("CrspMarketCalendar", d1, d2) - !isbday("CrspMarketCalendar", d2)
-    if not_range !== nothing
-        s -= sum(s .> not_range)
-        e -= sum(e .>= not_range)
-    end
-    s:e
-end
-
-function data_range(d1::Date, d2::Date, firm_match::Union{Nothing, FirmData}=nothing)
-    x = data_range(MARKET_DATA_CACHE.date_start, d1, d2)
-    # need to fix, not is just based off of a different range than the date vector
-    if firm_match !== nothing && firm_match.missing_bday !== nothing
-        not_range = firm_match.missing_bday .+ bdayscount("CrspMarketCalendar", MARKET_DATA_CACHE.date_start, firm_match.date_start)
-        #println(bdayscount("CrspMarketCalendar", MARKET_DATA_CACHE.date_start, firm_match.date_start))
-        #println(x)
-        not_range = not_range[x[1] .<= not_range .<= x[end]]
-        not_range .-= (x[1] - 1)
-        #println(not_range)
-        x[Not(not_range)]
-    else
-        x
-    end
-end
-
-
-function check_all_businessdays(dates)
-    bday_list = isbday("CrspMarketCalendar", dates)
+function check_all_businessdays(dates, cal)
+    bday_list = isbday(cal, dates)
     if !all(bday_list)
         bday_list_inv = (!).(bday_list)
         if sum(bday_list_inv) <= 3
@@ -236,23 +196,31 @@ function check_all_businessdays(dates)
     end
 end
 
-function find_missing_bday(dates::Vector{Date}; perform_checks=true)
-    if perform_checks
-        if !issorted(dates)
-            dates = sort(dates)
-        end
-        check_all_businessdays(dates)
-    end
+function find_missings(x)
+    Set(
+        findall(
+            ismissing.(x)
+        )
+    )
+end
 
-    # since all days are unique to a firm, if there are no missing dates skip this whole process
-    if length(dates) == bdayscount("CrspMarketCalendar", dates[1], dates[end]) + 1
-        return nothing
+function row_to_dict(df_row::DataFrameRow)
+    if all(length.(values(df_row)) .== 0)
+        nothing
+    else
+        Dict{Symbol, Set{Int}}(Symbol.(names(df_row)) .=> values(df_row))
     end
-    out = UInt32[]
+end
+
+function add_missing_bdays(dates, cal)
+    out = Date[]
+    if length(dates) == bdayscount(cal, dates[1], dates[end]) + 1
+        return out
+    end
     dates_counter = 1
-    for (i, d) in enumerate(MARKET_DATA_CACHE.dates[data_range(MARKET_DATA_CACHE.date_start, dates[1], dates[end])])
+    for d in listbdays(cal, dates[1], dates[end])
         if dates[dates_counter] > d
-            push!(out, i)
+            push!(out, d)
         else
             dates_counter += 1
         end
@@ -261,153 +229,118 @@ function find_missing_bday(dates::Vector{Date}; perform_checks=true)
 end
 
 
+function adjust_missing_bdays(missing_bdays, s::Int, e::Int)
+    Set(filter(x -> s <= x <= e, missing_bdays) .- (s - 1))
+end
+
+
+# function Base.merge(data::FirmDataVector...)
+
 """
-    get_firm_data(id::Real, date_start::Date, date_end::Date, col::String="ret")
+    get_firm_data(id::Real, date_start::Date, date_end::Date, col::Symbol="ret")
 
 Fetches a vector from the FIRM_DATA_CACHE for a specific firm over a date range.
 """
-function get_firm_data(id::Real, date_start::Date, date_end::Date, col::String="ret")
-    if !haskey(FIRM_DATA_CACHE, id)
-        @warn("Data for firm id $id is not stored in the cached data")
-        return [missing]
-    end
-    firm_data = FIRM_DATA_CACHE[id][col]
-    if Warn_Settings["firm_dates_range"]
-        date_start < firm_data.date_start && @warn "Minimum Date is less than Cached Firm Date Start, this will be adjusted."
-        date_end > firm_data.date_end && @warn "Maximum Date is greater than Cached Firm Date End, this will be adjusted."
-    end
-    date_start = max(date_start, firm_data.date_start)
-    date_end = min(date_end, firm_data.date_end)
-
-    if date_end < date_start
-        return [missing]
+function Base.getindex(data::DataMatrix, dates::StepRange{Date, <:DatePeriod}, cols::Vector{Symbol})
+    if any([!haskey(data.cols, x) for x in cols])
+        throw("Not all columns are in the data")
     end
 
-    firm_data.data[data_range(firm_data.date_start, date_start, date_end, firm_data.missing_bday)]
-end
+    @assert data.dt_min <= dates[1] "Dates out of bounds"
+    @assert data.dt_max >= dates[end] "Dates out of bounds"
 
-col_pos(x::String, cols::Vector{String}) = findfirst(isequal(x), cols)
-
-# only market data
-"""
-    get_market_data(date_start::Date, date_end::Date, cols_market::String...)
-
-    get_market_data(id::Real, date_start::Date, date_end::Date, cols_market::Union{Nothing, Vector{String}}=nothing)
-
-Fetches a Matrix of market data between two dates, if an id (Integer) is provided, then the rows of the matrix will be the same
-length as the length of the vector for the firm betwee those two dates.
-"""
-function get_market_data(date_start::Date, date_end::Date, cols_market::String...)
-    if Warn_Settings["market_dates_range"]
-        date_start < MARKET_DATA_CACHE.date_start && @warn "Minimum Date is less than Cached Market Date Start, this will be adjusted."
-        date_end > MARKET_DATA_CACHE.date_end && @warn "Maximum Date is greater than Cached Market Date End, this will be adjusted."
-    end
-    date_start = max(date_start, MARKET_DATA_CACHE.date_start)
-    date_end = min(date_end, MARKET_DATA_CACHE.date_end)
-
-    if length(cols_market) == 0
-        pos = 1:length(MARKET_DATA_CACHE.cols)
+    s = bdayscount(data.cal, data.dt_min, dates[1]) + 1
+    e = s + bdayscount(data.cal, dates[1], dates[end]) - !isbday(data.cal, dates[end])
+    if data.missing_bdays !== nothing
+        new_missings = Dict{Symbol, Set{Int}}()
+        for col in cols
+            new_missings[col] = adjust_missing_bdays(data.missing_bdays[col], s, e)
+        end
+        if all(length.(values(new_missings)) .== 0)
+            new_missings = nothing
+        end
     else
-        @assert all([c in MARKET_DATA_CACHE.cols for c in cols_market]) "Not all columns are in the data"
-        pos = [col_pos(c, MARKET_DATA_CACHE.cols) for c in cols_market]
+        new_missings = nothing
     end
-    MARKET_DATA_CACHE.data[data_range(MARKET_DATA_CACHE.date_start, date_start, date_end), pos]
-end
-
-# market data with same length as a firm data
-
-function get_market_data(id::Real, date_start::Date, date_end::Date, cols_market::String...)
-    if !haskey(FIRM_DATA_CACHE, id)
-        @warn("Data for firm id $id is not stored in the cached data")
-        return [missing]
-    end
-    firm_data = FIRM_DATA_CACHE[id]
-    if Warn_Settings["firm_dates_range"]
-        date_start < firm_data.date_start && @warn "Minimum Date is less than Cached Firm Date Start, this will be adjusted."
-        date_end > firm_data.date_end && @warn "Maximum Date is greater than Cached Firm Date End, this will be adjusted."
-    end
-    if Warn_Settings["market_dates_range"]
-        date_start < MARKET_DATA_CACHE.date_start && @warn "Minimum Date is less than Cached Market Date Start, this will be adjusted."
-        date_end > MARKET_DATA_CACHE.date_end && @warn "Maximum Date is greater than Cached Market Date End, this will be adjusted."
-    end
-    date_start = max(date_start, firm_data.date_start, MARKET_DATA_CACHE.date_start)
-    date_end = min(date_end, firm_data.date_end, MARKET_DATA_CACHE.date_end)
-
-    if date_end < date_start
-        return [missing]
-    end
-
-    if length(cols_market) == 0
-        pos = 1:length(MARKET_DATA_CACHE.cols)
-    elseif length(cols_market) == 1
-        @assert cols_market[1] ∈ MARKET_DATA_CACHE.cols "$(cols_market[1]) is not in the market data cache"
-        pos = col_pos(cols_market[1], MARKET_DATA_CACHE.cols)
-    else
-        @assert all([c in MARKET_DATA_CACHE.cols for c in cols_market]) "Not all columns are in the data"
-        pos = [col_pos(c, MARKET_DATA_CACHE.cols) for c in cols_market]
-    end
-    MARKET_DATA_CACHE.data[data_range(date_start, date_end, firm_data), pos]
-end
-
-# market data and firm data with same length
-"""
-    get_firm_market_data(
-        id::Real,
-        date_start::Date,
-        date_end::Date;
-        cols_market::Union{Nothing, Vector{String}, String}=nothing,
-        col_firm::String
-    )
-
-Returns a Tuple of a vector of firm data and a matrix (or vector if only a String is passed for
-cols_market) of market data (matrix has same number of rows as vector length).
-"""
-function get_firm_market_data(
-    id::Real,
-    date_start::Date,
-    date_end::Date;
-    cols_market::Union{Nothing, Vector{String}, String}=nothing,
-    col_firm::String="ret"
-)
-    if !haskey(FIRM_DATA_CACHE, id)
-        @warn("Data for firm id $id is not stored in the cached data")
-        return ([missing], [missing])
-    end
-    firm_data = FIRM_DATA_CACHE[id][col_firm]
-    if Warn_Settings["firm_dates_range"]
-        date_start < firm_data.date_start && @warn "Minimum Date is less than Cached Firm Date Start, this will be adjusted."
-        date_end > firm_data.date_end && @warn "Maximum Date is greater than Cached Firm Date End, this will be adjusted."
-    end
-    if Warn_Settings["market_dates_range"]
-        date_start < MARKET_DATA_CACHE.date_start && @warn "Minimum Date is less than Cached Market Date Start, this will be adjusted."
-        date_end > MARKET_DATA_CACHE.date_end && @warn "Maximum Date is greater than Cached Market Date End, this will be adjusted."
-    end
-    date_start = max(date_start, firm_data.date_start, MARKET_DATA_CACHE.date_start)
-    date_end = min(date_end, firm_data.date_end, MARKET_DATA_CACHE.date_end)
-
-    if date_end < date_start
-        return ([missing], [missing])
-    end
-
-    if cols_market === nothing
-        pos = 1:length(MARKET_DATA_CACHE.cols)
-    elseif typeof(cols_market) <: Vector
-        @assert all([c in MARKET_DATA_CACHE.cols for c in cols_market]) "Not all columns are in the data"
-        pos = [col_pos(c, MARKET_DATA_CACHE.cols) for c in cols_market]
-    else
-        @assert cols_market ∈ MARKET_DATA_CACHE.cols "$cols_market is not in the MARKET_DATA_CACHE"
-        pos = col_pos(cols_market, MARKET_DATA_CACHE.cols)
-    end
-    (
-        firm_data.data[data_range(firm_data.date_start, date_start, date_end, firm_data.missing_bday)],
-        MARKET_DATA_CACHE.data[data_range(date_start, date_end, firm_data), pos]
+    DataMatrix(
+        Index(cols),
+        data.data[s:e, data.cols[cols]],
+        new_missings,
+        dates[1],
+        dates[end],
+        data.cal
     )
 end
 
-function clear_firm_cached_data!()
-    for key in keys(FIRM_DATA_CACHE)
-        delete!(FIRM_DATA_CACHE, key)
+function Base.getindex(data::MarketData, id::Real, dates::StepRange{Date, <:DatePeriod}, cols::Vector{Symbol})
+    if !haskey(data.firmdata, id)
+        throw("Data for firm id $id is not stored in the data")
+    end
+    if any([!haskey(data.colmapping, x) for x in cols])
+        throw("Not all columns are in the data")
+    end
+
+    cols_market = Symbol[]
+    cols_firm = Symbol[]
+    for col in cols
+        if data.colmapping[col] == :marketdata
+            push!(cols_market, col)
+        else
+            push!(cols_firm, col)
+        end
+    end
+
+    if length(cols_firm) == 0
+        return data.marketdata[dates, cols_market]
+    else
+        firm_data = data.firmdata[id]
+        dt_min = max(dates[1], firm_data.dt_min)
+        dt_max = min(dates[end], firm_data.dt_max)
+        if length(cols_market) == 0
+            return firm_data[dt_min:Day(1):dt_max, cols_firm]
+        end
+
+        return merge(
+            firm_data[dt_min:Day(1):dt_max, cols_firm],
+            data.marketdata[dates, cols_market]
+        )
     end
 end
 
-firm_in_cache(id::Real) = haskey(FIRM_DATA_CACHE, id)
+function Base.merge(data1::DataMatrix, data2::DataMatrix)
+    @assert data1.dt_min == data2.dt_min "Dates must match to merge"
+    @assert data1.dt_max == data2.dt_max "Dates must match to merge"
+    @assert size(data1.data, 1) == size(data2.data, 1) "Length of matrices must match"
+    cols = vcat(data1.cols.names, data2.cols.names)
+    new_missings = if data1.missing_bdays === nothing && data2.missing_bdays === nothing
+        nothing
+    elseif data1.missing_bdays === nothing
+        data2.missing_bdays
+    elseif data2.missing_bdays === nothing
+        data1.missing_bdays
+    else
+        merge(data1.missing_bdays, data2.missing_bdays)
+    end
+    DataMatrix(
+        Index(cols),
+        hcat(data1.data, data2.data),
+        new_missings,
+        data1.dt_min,
+        data2.dt_max,
+        data1.cal
+    )
+end
+    
+    
+function Tables.MatrixTable(data::DataMatrix)
+    data = if data.missing_bdays === nothing
+        data.data
+    else
+        data.data[Not(union(values(data.missing_bdays))), :]
+    end
+    MatrixTable(
+        data.cols.names,
+        data.cols.lookup,
+        data
+    )
+end

@@ -1,11 +1,15 @@
 module AbnormalReturns
 
-using BusinessDays
 using Tables
 using LinearAlgebra
 using StatsBase
+using Reexport
 using StatsModels
 using Statistics
+using Dates
+using DataFrames
+using DataFrames: Index
+@reexport using BusinessDays
 
 ##############################################################################
 ##
@@ -19,7 +23,8 @@ export TimelineData, FirmData, car, alpha, beta,
     get_firm_market_data, BasicReg, cache_reg,
     bh_return, bhar, clear_firm_cached_data!,
     firm_in_cache, CrspMarketCalendar
-end # module
+
+export getindex, MatrixTable
 
 # From Statistics
 export var, std
@@ -34,6 +39,7 @@ export coef, coefnames, responsename, nobs, dof_residual,
 ##
 ##############################################################################
 
+include("marketCalendar.jl")
 include("timelineDataCache.jl")
 include("fastRegression.jl")
 

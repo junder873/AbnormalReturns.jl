@@ -4,12 +4,13 @@ using Tables
 using LinearAlgebra
 using StatsBase
 using Reexport
-using StatsModels
 using Statistics
 using Dates
 using DataFrames
 using DataFrames: Index
+using IntervalSets
 @reexport using BusinessDays
+@reexport using StatsModels
 
 ##############################################################################
 ##
@@ -18,13 +19,12 @@ using DataFrames: Index
 ##############################################################################
     
 # types and functions for fast CAR calculations
-export TimelineData, FirmData, car, alpha, beta,
-    MarketData, get_firm_data, get_market_data,
-    get_firm_market_data, BasicReg, cache_reg,
-    bh_return, bhar, clear_firm_cached_data!,
-    firm_in_cache, CrspMarketCalendar
+export MarketData, DataMatrix, car, alpha, beta,
+    BasicReg, cache_reg,
+    bh_return, bhar, MarketCalendar
 
-export getindex, MatrixTable
+export getindex, values, names, istable, columnaccess, columns,
+    getcolumn, columnnames
 
 # From Statistics
 export var, std

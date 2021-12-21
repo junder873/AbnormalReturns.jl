@@ -1,20 +1,20 @@
 struct BasicReg <: RegressionModel
     coef::Vector{Float64}
+    formula::FormulaTerm
     coefnames::Vector{String}
     yname::String
     nobs::Int
     tss::Float64
     rss::Float64
     residuals::Union{Vector{Float64}, Nothing}
-    function BasicReg(coef, coefnames, yname, nobs, tss, rss, residuals)
+    function BasicReg(coef, formula, coefnames, yname, nobs, tss, rss, residuals)
         @assert rss >= 0 "Residual sum of squares must be greater than 0"
         @assert tss >= 0 "Total sum of squares must be greater than 0"
         @assert nobs >= 0 "Observations must be greater than 0"
         @assert length(coef) == length(coefnames) "Number of coefficients must be same as number of coefficient names"
-        new(coef, coefnames, yname, nobs, tss, rss, residuals)
+        new(coef, formula, coefnames, yname, nobs, tss, rss, residuals)
     end
 end
-
 
 function quick_reg(
     y::Vector{<:Real},
@@ -40,6 +40,7 @@ function quick_reg(
     tss = sum(abs2, (y .- mean(y)))
     BasicReg(
         coef,
+        formula,
         coefnames,
         yname,
         length(y),
@@ -48,6 +49,89 @@ function quick_reg(
         save_residuals ? resid : nothing
     )
 end
+
+function quick_reg(
+    data::DataMatrix,
+    formula::FormulaTerm;
+    minobs::Real=0.8,
+    save_residuals::Bool=false
+)
+
+    if minobs < 1
+        minobs = bdayscount(data.cal, data.dt_min, data.dt_max) * minobs
+    end
+
+    if !omitsintercept(formula) & !hasintercept(formula)
+        formula = FormulaTerm(formula.lhs, InterceptTerm{true}() + formula.rhs)
+    end
+
+    sc = schema(f, data)
+
+    data = skipmissing(data[:, Symbol.(keys(sc))])
+
+    sch = apply_chema(f, sc)
+    resp, pred = modelcols(sch, data)
+
+    coef = cholesky!(Symmetric(pred' * pred)) \ (pred' * resp)
+    rss = sum(abs2, resid)
+    tss = sum(abs2, (resp .- mean(resp)))
+    yname, xnames = coefnames(formula)
+    
+
+    BasicReg(
+        coef,
+        formula,
+        xnames,
+        yname,
+        length(y),
+        tss,
+        rss,
+        save_residuals ? resp .- pred * coef : nothing
+    )
+end
+
+##
+
+function StatsBase.fit(
+    ::Type{BasicReg},
+    formula::FormulaTerm,
+    data::DataMatrix
+)
+    if minobs < 1
+        minobs = bdayscount(data.cal, data.dt_min, data.dt_max) * minobs
+    end
+
+    if !omitsintercept(formula) & !hasintercept(formula)
+        formula = FormulaTerm(formula.lhs, InterceptTerm{true}() + formula.rhs)
+    end
+
+    sc = schema(f, data)
+
+    data = skipmissing(data[:, Symbol.(keys(sc))])
+
+    sch = apply_chema(f, sc)
+    resp, pred = modelcols(sch, data)
+
+    coef = cholesky!(Symmetric(pred' * pred)) \ (pred' * resp)
+    rss = sum(abs2, resid)
+    tss = sum(abs2, (resp .- mean(resp)))
+    yname, xnames = coefnames(formula)
+    
+
+    BasicReg(
+        coef,
+        formula,
+        xnames,
+        yname,
+        length(y),
+        tss,
+        rss,
+        save_residuals ? resp .- pred * coef : nothing
+    )
+end
+
+
+
 
 """
 
@@ -148,6 +232,12 @@ between the two dates provided.
 This will work with any RegressionModel provided as long as it provides methods for `coefnames`
 that correspond to names stored in the MARKET_DATA_CACHE and a `coef` method. The model should be linear.
 """
-function StatsBase.predict(rr::RegressionModel, date_start::Date, date_end::Date)
-    get_market_data(date_start, date_end, coefnames(rr)...) * coef(rr)
+function StatsBase.predict(rr::RegressionModel, data::DataMatrix)
+    sc = schema(rr.formula, data)
+
+    data = skipmissing(data[:, Symbol.(keys(sc))])
+
+    sch = apply_chema(f, sc)
+    resp, pred = modelcols(sch, data)
+    pred * coef(rr)
 end

@@ -18,13 +18,14 @@
 ##
 ###################################################################
 
-struct DataMatrix
+struct DataMatrix{A <: Real}
     cols::Index
-    data::Matrix{<:Real}
+    data::Matrix{A}
     missing_bdays::Union{Nothing, Dict{Symbol, Set{Int}}}
     dt_min::Date
     dt_max::Date
     cal::HolidayCalendar
+    date_col::Bool
 end
 
 struct MarketData
@@ -32,21 +33,6 @@ struct MarketData
     colmapping::Dict{Symbol, Symbol}
     marketdata::DataMatrix
     firmdata::Dict{Int, DataMatrix}
-end
-
-struct CombinedData # this is the component that is tables.jl compatible
-    cols::Index
-    data::Matrix{<:Real}
-    dates::Vector{Date}
-    function Combinedata(cols, data)
-        @assert length(cols) == size(data, 2) "Dimensions are mismatched"
-        new(cols, data)
-    end
-    function Combinedata(cols, data, dates)
-        @assert length(dates) == size(data, 1) "Dimensions are mismatched"
-        @assert length(cols) == size(data, 2) "Dimensions are mismatched"
-        new(cols, data, dates)
-    end
 end
 
 
@@ -97,7 +83,8 @@ function MarketData(
         nothing,
         minimum(df_market[:, date_col_market]),
         maximum(df_market[:, date_col_market]),
-        cal
+        cal,
+        false
     )
 
     println("4 ", Dates.canonicalize(now() - start_time))
@@ -168,7 +155,8 @@ function MarketData(
             row_to_dict(df_idx_base[i, valuecols_firms]),
             df_idx_base[i, :date_min],
             df_idx_base[i, :date_max],
-            cal
+            cal,
+            false
         )
     end
 
@@ -242,9 +230,16 @@ end
 Fetches a vector from the FIRM_DATA_CACHE for a specific firm over a date range.
 """
 function Base.getindex(data::DataMatrix, dates::StepRange{Date, <:DatePeriod}, cols::Vector{Symbol})
-    if any([!haskey(data.cols, x) for x in cols])
+    if any([!haskey(data.cols, x) for x in cols if x != :date])
         throw("Not all columns are in the data")
     end
+    if :date ∈ cols
+        filter!(x -> x != :date, cols)
+        date_col=true
+    else
+        date_col=false
+    end
+
 
     @assert data.dt_min <= dates[1] "Dates out of bounds"
     @assert data.dt_max >= dates[end] "Dates out of bounds"
@@ -268,7 +263,8 @@ function Base.getindex(data::DataMatrix, dates::StepRange{Date, <:DatePeriod}, c
         new_missings,
         dates[1],
         dates[end],
-        data.cal
+        data.cal,
+        date_col
     )
 end
 
@@ -276,8 +272,15 @@ function Base.getindex(data::MarketData, id::Real, dates::StepRange{Date, <:Date
     if !haskey(data.firmdata, id)
         throw("Data for firm id $id is not stored in the data")
     end
-    if any([!haskey(data.colmapping, x) for x in cols])
+    if any([!haskey(data.colmapping, x) for x in cols if x != :date])
         throw("Not all columns are in the data")
+    end
+
+    if :date ∈ cols
+        filter!(x -> x != :date, cols)
+        date_col=true
+    else
+        date_col=false
     end
 
     cols_market = Symbol[]
@@ -291,27 +294,34 @@ function Base.getindex(data::MarketData, id::Real, dates::StepRange{Date, <:Date
     end
 
     if length(cols_firm) == 0
+        if date_col
+            push!(cols_market, :date)
+        end
         return data.marketdata[dates, cols_market]
     else
         firm_data = data.firmdata[id]
         dt_min = max(dates[1], firm_data.dt_min)
         dt_max = min(dates[end], firm_data.dt_max)
         if length(cols_market) == 0
+            if date_col
+                push!(cols_firm, :date)
+            end
             return firm_data[dt_min:Day(1):dt_max, cols_firm]
         end
 
         return merge(
             firm_data[dt_min:Day(1):dt_max, cols_firm],
-            data.marketdata[dates, cols_market]
+            data.marketdata[dates, cols_market];
+            date_col
         )
     end
 end
 
-function Base.merge(data1::DataMatrix, data2::DataMatrix)
+function Base.merge(data1::DataMatrix, data2::DataMatrix; date_col=false)
     @assert data1.dt_min == data2.dt_min "Dates must match to merge"
     @assert data1.dt_max == data2.dt_max "Dates must match to merge"
     @assert size(data1.data, 1) == size(data2.data, 1) "Length of matrices must match"
-    cols = vcat(data1.cols.names, data2.cols.names)
+    cols = merge(data1.cols, data2.cols)
     new_missings = if data1.missing_bdays === nothing && data2.missing_bdays === nothing
         nothing
     elseif data1.missing_bdays === nothing
@@ -322,25 +332,43 @@ function Base.merge(data1::DataMatrix, data2::DataMatrix)
         merge(data1.missing_bdays, data2.missing_bdays)
     end
     DataMatrix(
-        Index(cols),
+        cols,
         hcat(data1.data, data2.data),
         new_missings,
         data1.dt_min,
         data2.dt_max,
-        data1.cal
+        data1.cal,
+        date_col
     )
 end
-    
-    
-function Tables.MatrixTable(data::DataMatrix)
-    data = if data.missing_bdays === nothing
-        data.data
+
+Base.values(x::DataMatrix) = x.data
+
+Base.names(x::DataMatrix) = x.cols.names
+
+
+Tables.istable(::Type{<:DataMatrix}) = true
+Tables.columnaccess(::Type{<:DataMatrix}) = true
+Tables.schema(m::DataMatrix{T}) where {T} = Tables.Schema(names(m), fill(eltype(T), size(values(m), 2)))
+
+Tables.columns(x::DataMatrix) = x
+Tables.getcolumn(x::DataMatrix, i::Int) = x.data[:, i]
+function Tables.getcolumn(x::DataMatrix, nm::Symbol)
+    if nm == :date
+        listbdays(x.cal, x.dt_min, x.dt_max)
     else
-        data.data[Not(union(values(data.missing_bdays))), :]
+        Tables.getcolumn(x, x.cols[nm])
     end
-    MatrixTable(
-        data.cols.names,
-        data.cols.lookup,
-        data
-    )
 end
+Tables.columnnames(x::DataMatrix) = x.date_col ? vcat([:date], names(x)) : names(x)
+
+# Tables.rowaccess(::Type{DataMatrix}) = true
+# Tables.rows(x::DataMatrix) = x
+
+# struct MatrixRow{T} <: Tables.AbstractRow
+#     row::Int
+#     source::DataMatrix{T}
+#     date::Date
+# end
+
+# Base.eltype(x::DataMatrix{T}) where {T} = DataMatrixRow{T}

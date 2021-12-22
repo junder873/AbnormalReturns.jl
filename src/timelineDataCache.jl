@@ -1,22 +1,4 @@
-# The idea for this is heavily inspired by BusinessDays.jl
-# Thank you to that package for making this possible
 
-###################################################################
-##
-# Another idea to make this section better is to rewrite it relying
-# on a single master calendar from BusienssDays (likely a custom
-# calendar). This would have the advantage of being a more common
-# interface and considerably reducing storage since the individual
-# firms would just need date_start, date_end, and a vector of
-# days that are missing relative to the busienssday calendar.
-##
-# The difficulty of ths is quickly getting the underlying data.
-# There would be no loss of efficiency for firms that have no
-# missing data, but for firms with missing dates then bdayscount
-# would provide an innacurate position in the data and would need
-# to be adjusted based on the missing dates, which could be slow.
-##
-###################################################################
 
 struct DataMatrix{A <: Real}
     cols::Index
@@ -221,15 +203,59 @@ function adjust_missing_bdays(missing_bdays, s::Int, e::Int)
     Set(filter(x -> s <= x <= e, missing_bdays) .- (s - 1))
 end
 
+function adjust_missing_bdays(missing_bdays, s::Int)
+    Set(missing_bdays .+ s)
+end
 
-# function Base.merge(data::FirmDataVector...)
+function Base.hcat(data1::DataMatrix, data2::DataMatrix)
+    @assert advancebdays(data1.cal, data1.dt_max, 1) == data2.dt_min "Dates in the two sets must be sequential"
+    @assert data1.cols == data2.cols "Columns in the two sets must be the same"
+
+    if data1.missing_bdays === nothing && data2.missing_bdays === nothing
+        new_missings = nothing
+    elseif data1.missing_bdays === nothing
+        new_missings = data2.missing_bdays
+        for key in keys(new_missings)
+            new_missings[key] = adjust_missing_bdays(new_missings[key], length(data1))
+        end
+    elseif data2.missing_bdays === nothing
+        new_missings = data1.missing_bdays
+    else
+        new_misisngs = data1.missing_bdays
+        for key in keys(new_missings)
+            new_missings[key] = adjust_missing_bdays(data2.missing_bdays[key], length(data1))
+        end
+    end
+    DataMatrix(
+        data1.cols,
+        hcat(data1.data, data2.data),
+        new_missings,
+        data1.dt_min,
+        data2.dt_max,
+        data1.cal,
+        data1.date_col || data2.date_col
+    )
+end
+
+function date_range(data, dt_min, dt_max)
+    dt_min = max(data.dt_min, dates.left)
+    dt_max = min(data.dt_max, dates.right)
+    s = bdayscount(data.cal, data.dt_min, dt_min) + 1
+    e = s + bdayscount(data.cal, dates.left, dt_max) - !isbday(data.cal, dt_max)
+    s:e
+end
 
 """
     get_firm_data(id::Real, date_start::Date, date_end::Date, col::Symbol="ret")
 
 Fetches a vector from the FIRM_DATA_CACHE for a specific firm over a date range.
 """
-function Base.getindex(data::DataMatrix, dates::StepRange{Date, <:DatePeriod}, cols::Vector{Symbol})
+function Base.getindex(
+    data::DataMatrix,
+    dates::ClosedInterval{Date},
+    cols::Vector{Symbol};
+    add_missing_pre_post::Bool=true
+    )
     if any([!haskey(data.cols, x) for x in cols if x != :date])
         throw("Not all columns are in the data")
     end
@@ -240,12 +266,8 @@ function Base.getindex(data::DataMatrix, dates::StepRange{Date, <:DatePeriod}, c
         date_col=false
     end
 
+    r = date_range(data, dates.left, dates.right)
 
-    @assert data.dt_min <= dates[1] "Dates out of bounds"
-    @assert data.dt_max >= dates[end] "Dates out of bounds"
-
-    s = bdayscount(data.cal, data.dt_min, dates[1]) + 1
-    e = s + bdayscount(data.cal, dates[1], dates[end]) - !isbday(data.cal, dates[end])
     if data.missing_bdays !== nothing
         new_missings = Dict{Symbol, Set{Int}}()
         for col in cols
@@ -257,18 +279,65 @@ function Base.getindex(data::DataMatrix, dates::StepRange{Date, <:DatePeriod}, c
     else
         new_missings = nothing
     end
-    DataMatrix(
+    out = DataMatrix(
         Index(cols),
-        data.data[s:e, data.cols[cols]],
+        data.data[r, data.cols[cols]],
         new_missings,
-        dates[1],
-        dates[end],
+        dt_min,
+        dt_max,
         data.cal,
         date_col
     )
+    if add_missing_pre_post && data.dt_min > dates.left
+        to_add_pre = bdayscount(data.cal, dates.left, data.dt_min)
+        new_missings = Dict{Symbol, Set{Int}}(cols .=> repeat(Set(1:to_add_pre), length(cols)))
+        out = hcat(
+            DataMatrix(
+                out.cols,
+                zeros(eltype(data.data), (to_add_pre, length(cols))),
+                new_missings,
+                dates.left,
+                advancebdays(data.cal, dt_min, -1),
+                data.cal,
+                date_col
+            ),
+            out
+        )
+    end
+    if add_missing_pre_post && data.dt_max < dates.right
+        to_add_post = bdayscount(data.cal, data.dt_max, dates.right)
+        new_missings = Dict{Symbol, Set{Int}}(cols .=> repeat(Set(1:to_add_post), length(cols)))
+        out = hcat(
+            DataMatrix(
+                out.cols,
+                zeros(eltype(data.data), (to_add_post, length(cols))),
+                new_missings,
+                advancebdays(data.cal, dt_max, 1),
+                dates.right,
+                data.cal,
+                date_col
+            ),
+            out
+        )
+    end
+    out
 end
 
-function Base.getindex(data::MarketData, id::Real, dates::StepRange{Date, <:DatePeriod}, cols::Vector{Symbol})
+function Base.getindex(data::DataMatrix, ::Colon, cols::Vector{Symbol})
+    getindex(data, data.dt_min .. data.dt_max, cols)
+end
+
+function getindex(data::DataMatrix, dates::ClosedInterval{Date}, ::Colon)
+    getindex(data, dates, data.cols.names)
+end
+
+function Base.getindex(
+    data::MarketData,
+    id::Real,
+    dates::ClosedInterval{Date},
+    cols::Vector{Symbol};
+    add_missing_pre_post::Bool=true
+    )
     if !haskey(data.firmdata, id)
         throw("Data for firm id $id is not stored in the data")
     end
@@ -300,21 +369,114 @@ function Base.getindex(data::MarketData, id::Real, dates::StepRange{Date, <:Date
         return data.marketdata[dates, cols_market]
     else
         firm_data = data.firmdata[id]
-        dt_min = max(dates[1], firm_data.dt_min)
-        dt_max = min(dates[end], firm_data.dt_max)
         if length(cols_market) == 0
             if date_col
                 push!(cols_firm, :date)
             end
-            return firm_data[dt_min:Day(1):dt_max, cols_firm]
+            return getindex(firm_data, dates, cols; add_missing_pre_post)
         end
 
         return merge(
-            firm_data[dt_min:Day(1):dt_max, cols_firm],
+            getindex(firm_data, dates, cols; add_missing_pre_post),
             data.marketdata[dates, cols_market];
             date_col
         )
     end
+end
+
+function Base.getindex(data::MarketData, id::Int, ::Colon, cols::Vector{Symbol})
+    getindex(data, id, data.cal.dt_min .. data.cal.dt_max, cols; add_missing_pre_post=false)
+end
+
+function getindex(data::MarketData, id::Int, dates::ClosedInterval{Date}, ::Colon)
+    getindex(data, id, dates, Symbol.(keys(data.colmapping)))
+end
+
+function Base.getindex(data::MarketData, dates::ClosedInterval{Date}, cols::Vector{Symbol})
+    if any([!haskey(data.colmapping, x) for x in cols if x != :date])
+        throw("Not all columns are in the data")
+    end
+    if any([data.colmapping[x] for x in cols] .== :firmdata)
+        throw("An ID must be supplied to access columns of firm data")
+    end
+
+    data.marketdata[dates, cols]
+end
+
+function Base.getindex(data::MarketData, ::Colon, cols::Vector{Symbol})
+    getindex(data, data.cal.dt_min .. data.cal.dt_max, cols)
+end
+
+function getindex(data::MarketData, dates::ClosedInterval{Date}, ::Colon)
+    getindex(data, dates, Symbol.(keys(data.colmapping)))
+end
+
+function Base.getindex(
+    data::DataMatrix,
+    dates::ClosedInterval{Date},
+    col::Symbol;
+    add_missing_pre_post::Bool=true
+    )
+    if !haskey(data.colmapping, col)
+        throw("Column is not in the data")
+    end
+
+    r = date_range(data, dates.left, dates.right)
+    out = getcolumn(data, col)[r]
+    if add_missing_pre_post && data.dt_min > dates.left
+        to_add_pre = bdayscount(data.cal, dates.left, data.dt_min)
+        out = vcat(
+            repeat([missing], to_add_pre),
+            out
+        )
+    end
+    if add_missing_pre_post && data.dt_max < dates.right
+        to_add_post = bdayscount(data.cal, data.dt_max, dates.right)
+        out = vcat(
+            repeat([missing], to_add_post),
+            out
+        )
+    end
+    out
+end
+
+function Base.getindex(data::DataMatrix, ::Colon, col::Symbol)
+    getindex(data, data.dt_min .. data.dt_max, cols)
+end
+
+function Base.getindex(data::MarketData,
+    id::Int,
+    dates::ClosedInterval{Date},
+    col::Symbol;
+    add_missing_pre_post::Bool=true
+    )
+    if !haskey(data.colmapping, col)
+        throw("Column is not in the data")
+    end
+    if data.colmapping[col] == :firmdata
+        return getindex(data.firmdata[id], dates, col; add_missing_pre_post)
+    else
+        return data.marketdata[dates, col]
+    end
+end
+
+function Base.getindex(data::MarketData, dates::ClosedInterval{Date}, col::Symbol)
+    if !haskey(data.colmapping, col)
+        throw("Column is not in the data")
+    end
+    if data.colmapping[col] == :firmdata
+        throw("To get firm data an ID must be supplied")
+    else
+        return data.marketdata[dates, col]
+    end
+end
+
+function Base.getindex(data::MarketData, id::Int, ::Colon, col::Symbol)
+    getindex(data, id, data.cal.dt_min .. data.cal.dt_max, col; add_missing_pre_post=false)
+end
+
+function Base.getindex(data::MarketData, ::Colon, col::Symbol)
+    getindex(data, data.cal.dt_min .. data.cal.dt_max, col)
 end
 
 function Base.merge(data1::DataMatrix, data2::DataMatrix; date_col=false)
@@ -352,7 +514,16 @@ Tables.columnaccess(::Type{<:DataMatrix}) = true
 Tables.schema(m::DataMatrix{T}) where {T} = Tables.Schema(names(m), fill(eltype(T), size(values(m), 2)))
 
 Tables.columns(x::DataMatrix) = x
-Tables.getcolumn(x::DataMatrix, i::Int) = x.data[:, i]
+function Tables.getcolumn(x::DataMatrix, i::Int)
+    col = x.cols.names[i]
+    if x.missing_bdays === nothing || length(x.missing_bdays[col]) == 0
+        x.data[:, i]
+    else
+        out = allowmissing(x.data[:, i])
+        out[collect(x.missing_bdays[col])] .= missing
+        out
+    end
+end
 function Tables.getcolumn(x::DataMatrix, nm::Symbol)
     if nm == :date
         listbdays(x.cal, x.dt_min, x.dt_max)
@@ -361,6 +532,25 @@ function Tables.getcolumn(x::DataMatrix, nm::Symbol)
     end
 end
 Tables.columnnames(x::DataMatrix) = x.date_col ? vcat([:date], names(x)) : names(x)
+
+Base.length(x::DataMatrix) = size(x.data, 1)
+
+function DataFrames.dropmissing(x::DataMatrix)
+    if x.missing_bdays === nothing
+        return x
+    end
+    drops = union(values(x.missing_bdays)...)
+    new_data = x.data[Not(collect(drops)), :]
+    DataMatrix(
+        x.cols,
+        new_data,
+        nothing,
+        x.dt_min,
+        x.dt_max,
+        x.cal,
+        false
+    )
+end
 
 # Tables.rowaccess(::Type{DataMatrix}) = true
 # Tables.rows(x::DataMatrix) = x

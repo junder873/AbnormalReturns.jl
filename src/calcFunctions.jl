@@ -5,29 +5,34 @@ Statistics.std(rr::RegressionModel) = sqrt(var(rr))
 # it seems like I want some kind of formula with a similar minobs option for a lot
 # of these functions as well.
 function Statistics.var(
-    id::Int,
-    date_start::Date,
-    date_end::Date;
-    cols_market::String="vwretd",
-    col_firm::String="ret"
+    data::DataMatrix,
+    col_firm::Symbol,
+    col_market::Symbol;
+    minobs::Real=0.8
 )
-    var((-).(get_firm_market_data(id, date_start, date_end; cols_market, col_firm)...))
+    if minobs < 1
+        minobs = bdayscount(data.cal, data.dt_min, data.dt_max) * minobs
+    end
+    m = dropmissing(data[:, [col_firm, col_market]]).data
+    if size(m, 1) < minobs
+        return missing
+    end
+    var(m[:, 1] .- m[:, 2])
 end
 
 function Statistics.std(
-    id::Int,
-    date_start::Date,
-    date_end::Date;
-    cols_market::String="vwretd",
-    col_firm::String="ret"
+    data::DataMatrix,
+    col_firm::Symbol,
+    col_market::Symbol;
+    minobs::Real=0.8
 )
-    sqrt(var(id, date_start, date_end; cols_market, col_firm))
+    sqrt(var(data, col_firm, col_market; minobs))
 end
 
 Statistics.var(rr::Missing) = missing
 Statistics.std(rr::Missing) = missing
 
-bh_return(x) = prod(1 .+ x) - 1
+bh_return(x) = prod(1 .+ skipmissing(x)) - 1
 bhar(x, y) = bh_return(x) - bh_return(y)
 
 # for firm data
@@ -41,13 +46,8 @@ is calculated for the MARKET_DATA_CACHE.
 
 These functions treat missing returns in the period implicitly as a zero return.
 """
-function bh_return(id::Int, date_start::Date, date_end::Date, col_firm::String="ret")
-    bh_return(get_firm_data(id, date_start, date_end, col_firm))
-end
-
-# for market data
-function bh_return(date_start::Date, date_end::Date, cols_market::String="vwretd")
-    bh_return(get_market_data(date_start, date_end, cols_market))
+function bh_return(data::DataMatrix, col)
+    bh_return(data[:, col])
 end
 
 
@@ -62,24 +62,33 @@ based off of the value provided (typically a market wide return).
 These functions treat missing returns in the period implicitly as a zero return.
 """
 function bhar(
-    id::Int,
-    date_start::Date,
-    date_end::Date;
-    cols_market::String="vwretd",
-    col_firm::String="ret",
+    data::DataMatrix,
+    firm_col::Symbol,
+    mkt_col::Symbol;
+    minobs::Real=0.8
 )
-    bhar(get_firm_market_data(id, date_start, date_end; cols_market, col_firm)...)
+    if minobs < 1
+        minobs = bdayscount(data.cal, data.dt_min, data.dt_max) * minobs
+    end
+    m = dropmissing(data[:, [firm_col, mkt_col]]).data
+    if size(m, 1) < minobs
+        return missing
+    end
+    bhar(m[:, 1], m[:, 2])
 end
 
 function bhar(
-    id::Int,
-    date_start::Date,
-    date_end::Date,
-    rr::Union{Missing, RegressionModel}
+    data::DataMatrix,
+    rr::RegressionModel
 )
-    ismissing(rr) && return missing
-    ret, mkt = get_firm_market_data(id, date_start, date_end; cols_market=coefnames(rr), col_firm=responsename(rr))
-    bhar(ret, predict(rr, mkt))
+    if minobs < 1
+        minobs = bdayscount(data.cal, data.dt_min, data.dt_max) * minobs
+    end
+    resp, pred = modelcols(rr.formula, data)
+    if length(resp) < minobs
+        return missing
+    end
+    bhar(resp, predict(rr, pred))
 end
 
 """
@@ -96,24 +105,34 @@ undervalue extreme returns compared to buy and hold returns (bh_return or bhar).
 These functions treat missing returns in the period implicitly as a zero return.
 """
 function car(
-    id::Int,
-    date_start::Date,
-    date_end::Date;
-    cols_market::String="vwretd",
-    col_firm::String="ret"
+    data::DataMatrix,
+    firm_col::Symbol,
+    mkt_col::Symbol;
+    minobs::Real=0.8
 )
-    sum((-).(get_firm_market_data(id, date_start, date_end; cols_market, col_firm)...))
+    if minobs < 1
+        minobs = bdayscount(data.cal, data.dt_min, data.dt_max) * minobs
+    end
+    m = dropmissing(data[[firm_col, mkt_col]]).data
+    if size(m, 1) < minobs
+        return missing
+    end
+    sum(m[:, 1] .- m[:, 2])
 end
 
 function car(
-    id::Int,
-    date_start::Date,
-    date_end::Date,
-    rr::Union{Missing, RegressionModel}
+    data::DataMatrix,
+    rr::RegressionModel;
+    minobs::Real=.8
 )
-    ismissing(rr) && return missing
-    ret, mkt = get_firm_market_data(id, date_start, date_end; cols_market=coefnames(rr), col_firm=responsename(rr))
-    sum(ret .- predict(rr, mkt))
+    if minobs < 1
+        minobs = bdayscount(data.cal, data.dt_min, data.dt_max) * minobs
+    end
+    resp, pred = modelcols(rr, data::DataMatrix)
+    if length(resp) < minobs
+        return missing
+    end
+    sum(resp .- predict(rr, pred))
 end
 
 

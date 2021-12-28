@@ -33,6 +33,8 @@ export var, std
 export coef, coefnames, responsename, nobs, dof_residual,
     r2, adjr2, islinear, deviance, rss, predict
 
+export getindex
+
 ##############################################################################
 ##
 ## Load files
@@ -40,7 +42,7 @@ export coef, coefnames, responsename, nobs, dof_residual,
 ##############################################################################
 
 include("marketCalendar.jl")
-include("timelineDataCache.jl")
+include("timelineData.jl")
 include("fastRegression.jl")
 
 end

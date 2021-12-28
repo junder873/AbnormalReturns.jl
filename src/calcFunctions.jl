@@ -13,7 +13,7 @@ function Statistics.var(
     if minobs < 1
         minobs = bdayscount(data.cal, data.dt_min, data.dt_max) * minobs
     end
-    m = dropmissing(data[:, [col_firm, col_market]]).data
+    m = dropmissing(data[:, [col_firm, col_market]]).matrix
     if size(m, 1) < minobs
         return missing
     end
@@ -70,7 +70,7 @@ function bhar(
     if minobs < 1
         minobs = bdayscount(data.cal, data.dt_min, data.dt_max) * minobs
     end
-    m = dropmissing(data[:, [firm_col, mkt_col]]).data
+    m = dropmissing(data[:, [firm_col, mkt_col]]).matrix
     if size(m, 1) < minobs
         return missing
     end
@@ -84,7 +84,7 @@ function bhar(
     if minobs < 1
         minobs = bdayscount(data.cal, data.dt_min, data.dt_max) * minobs
     end
-    resp, pred = modelcols(rr.formula, data)
+    resp, pred = dropmissing_modelcols(rr.formula, data)
     if length(resp) < minobs
         return missing
     end
@@ -113,7 +113,7 @@ function car(
     if minobs < 1
         minobs = bdayscount(data.cal, data.dt_min, data.dt_max) * minobs
     end
-    m = dropmissing(data[[firm_col, mkt_col]]).data
+    m = dropmissing(data[[firm_col, mkt_col]]).matrix
     if size(m, 1) < minobs
         return missing
     end
@@ -128,7 +128,7 @@ function car(
     if minobs < 1
         minobs = bdayscount(data.cal, data.dt_min, data.dt_max) * minobs
     end
-    resp, pred = modelcols(rr, data::DataMatrix)
+    resp, pred = dropmissing_modelcols(rr, data::DataMatrix)
     if length(resp) < minobs
         return missing
     end
@@ -153,7 +153,7 @@ This is the alpha from the estimation period.
 This function finds the position of the coefficient name provided, defaults to "intercept".
 If the coefname is not in the regression, then this function returns an error.
 """
-alpha(rr::RegressionModel, coefname::String...="intercept") = get_coefficient_val(rr, coefname...)
+alpha(rr::RegressionModel, coefname::String...="(Intercept)") = get_coefficient_val(rr, coefname...)
 
 
 """
@@ -167,5 +167,5 @@ If the coefname is not in the regression, then this function returns an error.
 """
 beta(rr::RegressionModel, coefname::String...=["mkt", "mktrf", "vwretd", "ewretd"]...) = get_coefficient_val(rr, coefname...)
 
-alpha(rr::Missing, coefname::String...="intercept") = missing
+alpha(rr::Missing, coefname::String...="(Intercept)") = missing
 beta(rr::Missing, coefname::String...="error") = missing

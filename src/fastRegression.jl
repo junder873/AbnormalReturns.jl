@@ -31,7 +31,7 @@ function quick_reg(
         formula = FormulaTerm(formula.lhs, InterceptTerm{true}() + formula.rhs)
     end
 
-    resp, pred = modelcols(f, data)
+    resp, pred = dropmissing_modelcols(f, data)
 
     if length(resp) < minobs
         throw("Too few observations")
@@ -169,11 +169,11 @@ that correspond to names stored in the MARKET_DATA_CACHE and a `coef` method. Th
 """
 # this might be too generalized...
 function StatsBase.predict(rr::RegressionModel, data::DataMatrix)
-    resp, pred = modelcols(rr.formula, data)
+    resp, pred = dropmissing_modelcols(rr.formula, data)
     predict(rr, pred)
 end
 
-function StatsModels.modelcols(f, data::DataMatrix)
+function dropmissing_modelcols(f, data::DataMatrix)
     sc = schema(f, data)
 
     data = dropmissing(data[:, Symbol.(keys(sc))])

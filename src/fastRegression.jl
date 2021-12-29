@@ -18,7 +18,7 @@ end
 
 function quick_reg(
     data::DataMatrix,
-    formula::FormulaTerm;
+    f::FormulaTerm;
     minobs::Real=0.8,
     save_residuals::Bool=false
 )
@@ -27,31 +27,35 @@ function quick_reg(
         minobs = bdayscount(data.cal, data.dt_min, data.dt_max) * minobs
     end
 
-    if !omitsintercept(formula) & !hasintercept(formula)
-        formula = FormulaTerm(formula.lhs, InterceptTerm{true}() + formula.rhs)
+    if !StatsModels.omitsintercept(f) & !StatsModels.hasintercept(f)
+        f = FormulaTerm(f.lhs, InterceptTerm{true}() + f.rhs)
     end
 
-    resp, pred = dropmissing_modelcols(f, data)
+    data = dropmissing(data[:, StatsModels.termvars(f)])
 
-    if length(resp) < minobs
-        throw("Too few observations")
+    if length(data) < minobs
+        #throw("Too few observations")
+        return missing
     end
+
+    sch = apply_schema(f, schema(f, data))
+    resp, pred = modelcols(sch, data)
 
     coef = cholesky!(Symmetric(pred' * pred)) \ (pred' * resp)
+    resid = resp .- pred * coef
     rss = sum(abs2, resid)
     tss = sum(abs2, (resp .- mean(resp)))
-    yname, xnames = coefnames(formula)
-    
+    yname, xnames = coefnames(sch)
 
     BasicReg(
         coef,
-        formula,
+        f,
         xnames,
         yname,
-        length(y),
+        length(resp),
         tss,
         rss,
-        save_residuals ? resp .- pred * coef : nothing
+        save_residuals ? resid : nothing
     )
 end
 

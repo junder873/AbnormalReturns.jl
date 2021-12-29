@@ -1,8 +1,8 @@
 
 
-struct DataMatrix{A <: Real}
+struct DataMatrix
     cols::Index
-    matrix::Matrix{A}
+    matrix::Matrix{Float64}
     missing_bdays::Union{Nothing, Dict{Symbol, Set{Int}}}
     dt_min::Date
     dt_max::Date
@@ -256,10 +256,10 @@ Fetches a vector from the FIRM_DATA_CACHE for a specific firm over a date range.
 # returns another data matrix
 ###########################################################
 function Base.getindex(
-    data::DataMatrix{T},
+    data::DataMatrix,
     dates::ClosedInterval{Date},
     cols::Vector{Symbol}
-    ) where {T<:Real}
+    )
     if any([!haskey(data.cols, x) for x in cols if x != :date])
         println([x for x in cols if !haskey(data.cols, x)])
         throw("Not all columns are in the data")
@@ -335,7 +335,7 @@ function Base.getindex(data::DataMatrix, ::Colon, cols::Vector{Symbol})
     data[data.dt_min .. data.dt_max, cols]
 end
 
-function Base.getindex(data::DataMatrix{T}, dates::ClosedInterval{Date}, ::Colon) where {T<:Real}
+function Base.getindex(data::DataMatrix, dates::ClosedInterval{Date}, ::Colon)
     data[dates, data.cols.names]
 end
 
@@ -428,10 +428,10 @@ end
 # returns a vector
 ################################################
 function Base.getindex(
-    data::DataMatrix{T},
+    data::DataMatrix,
     dates::ClosedInterval{Date},
     col::Symbol
-    ) where {T<:Real}
+    )
     if !haskey(data.cols, col)
         throw("Column is not in the data")
     end
@@ -455,8 +455,8 @@ function Base.getindex(
     out
 end
 
-function Base.getindex(data::DataMatrix{T}, ::Colon, col::Symbol) where {T<:Real}
-    data[data.dt_min .. data.dt_max, col]
+function Base.getindex(data::DataMatrix, ::Colon, col::Symbol)
+    Tables.getcolumn(data, col)
 end
 
 function Base.getindex(data::MarketData,
@@ -502,7 +502,7 @@ end
 # Access for single date/column
 #####################################################
 
-function Base.getindex(data::DataMatrix{T}, d::Date, col::Symbol) where {T<:Real}
+function Base.getindex(data::DataMatrix, d::Date, col::Symbol)
     if !haskey(data.cols, col)
         throw("Column $col is not in the data")
     end
@@ -545,7 +545,7 @@ end
 
 
 
-function Base.hcat(data1::DataMatrix{T}, data2::DataMatrix{T}; date_col=false) where {T<:Real}
+function Base.hcat(data1::DataMatrix, data2::DataMatrix; date_col=false)
     @assert data1.dt_min == data2.dt_min "Dates must match to merge"
     @assert data1.dt_max == data2.dt_max "Dates must match to merge"
     @assert size(data1.matrix, 1) == size(data2.matrix, 1) "Length of matrices must match"
@@ -583,10 +583,10 @@ Base.names(x::DataMatrix) = x.cols.names
 
 Tables.istable(::Type{<:DataMatrix}) = true
 Tables.columnaccess(::Type{<:DataMatrix}) = true
-Tables.schema(m::DataMatrix{T}) where {T} = Tables.Schema(names(m), fill(eltype(T), size(values(m), 2)))
+Tables.schema(m::DataMatrix) = Tables.Schema(names(m), fill(Float64, size(values(m), 2)))
 
 Tables.columns(x::DataMatrix) = x
-function Tables.getcolumn(x::DataMatrix{T}, i::Int) where {T<:Real}
+function Tables.getcolumn(x::DataMatrix, i::Int)
     col = x.cols.names[i]
     if x.missing_bdays === nothing || length(x.missing_bdays[col]) == 0
         x.matrix[:, i]
@@ -596,7 +596,7 @@ function Tables.getcolumn(x::DataMatrix{T}, i::Int) where {T<:Real}
         out
     end
 end
-function Tables.getcolumn(x::DataMatrix{T}, nm::Symbol) where {T<:Real}
+function Tables.getcolumn(x::DataMatrix, nm::Symbol)
     if nm == :date
         listbdays(x.cal, x.dt_min, x.dt_max)
     else

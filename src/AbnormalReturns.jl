@@ -20,7 +20,7 @@ using IntervalSets
     
 # types and functions for fast CAR calculations
 export MarketData, DataMatrix, car, alpha, beta,
-    BasicReg, cache_reg,
+    BasicReg, quick_reg,
     bh_return, bhar, MarketCalendar
 
 export getindex, values, names, istable, columnaccess, columns,

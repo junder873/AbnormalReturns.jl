@@ -37,7 +37,6 @@ function MarketData(
         valuecols_firms = Symbol.([n for n in Symbol.(names(df_firms)) if n ∉ [date_col_firms, id_col]])
     end
 
-    println("1 ", Dates.canonicalize(now() - start_time))
     df_market = select(df_market, vcat([date_col_market], valuecols_market))
     dropmissing!(df_market)
     sort!(df_market)
@@ -46,12 +45,9 @@ function MarketData(
         @error("There are duplicate date rows in the market data")
     end
 
-    println("2 ", Dates.canonicalize(now() - start_time))
     df_firms = select(df_firms, vcat([id_col, date_col_firms], valuecols_firms))
     dropmissing!(df_firms, [id_col, date_col_firms])
     sort!(df_firms, [id_col, date_col_firms])
-
-    println("3 ", Dates.canonicalize(now() - start_time))
 
     if any(nonunique(df_firms, [id_col, date_col_firms]))
         @error("There are duplicate id-date rows in the firm data")
@@ -69,7 +65,6 @@ function MarketData(
         false
     )
 
-    println("4 ", Dates.canonicalize(now() - start_time))
     col_map = Dict{Symbol, Symbol}()
     for col in Symbol.(valuecols_market)
         col_map[col] = :marketdata
@@ -80,10 +75,7 @@ function MarketData(
 
     check_all_businessdays(unique(df_firms[:, date_col_firms]), cal)
 
-    println("5 ", Dates.canonicalize(now() - start_time))
-
     gdf = groupby(df_firms, id_col)
-    println("6 ", Dates.canonicalize(now() - start_time))
     df_temp = combine(
         gdf,
         date_col_firms => (x -> add_missing_bdays(x, cal)) => date_col_firms
@@ -97,8 +89,6 @@ function MarketData(
         sort!(df_firms, [id_col, date_col_firms])
         gdf = groupby(df_firms, id_col)
     end
-
-    println("7 ", Dates.canonicalize(now() - start_time))
     
     df_idx_base = combine(
         gdf,
@@ -106,7 +96,6 @@ function MarketData(
         date_col_firms .=> [minimum, maximum] .=> [:date_min, :date_max]
     )
 
-    println("8 ", Dates.canonicalize(now() - start_time))
     for col in valuecols_firms
         df_firms[!, col] = coalesce.(
             df_firms[:, col],
@@ -119,9 +108,6 @@ function MarketData(
 
     firm_matrix = Matrix(df_firms[:, valuecols_firms])
 
-
-
-    println("9 ", Dates.canonicalize(now() - start_time))
     firm_data = Dict{Int, DataMatrix}()
     sizehint!(firm_data, nrow(df_idx_base))
 
@@ -141,8 +127,6 @@ function MarketData(
             false
         )
     end
-
-    println("10 ", Dates.canonicalize(now() - start_time))
 
     MarketData(
         cal,

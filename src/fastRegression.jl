@@ -17,21 +17,23 @@ struct BasicReg <: RegressionModel
 end
 
 function quick_reg(
-    data::DataMatrix,
+    data::TimelineTable,
     f::FormulaTerm;
     minobs::Real=0.8,
     save_residuals::Bool=false
 )
 
     if minobs < 1
-        minobs = bdayscount(data.cal, data.dt_min, data.dt_max) * minobs
+        minobs = bdayscount(data.calendar, data.dates.left, data.dates.right) * minobs
     end
 
     if !StatsModels.omitsintercept(f) & !StatsModels.hasintercept(f)
         f = FormulaTerm(f.lhs, InterceptTerm{true}() + f.rhs)
     end
 
-    data = dropmissing(data[:, StatsModels.termvars(f)])
+    select!(data, StatsModels.termvars(f))
+    dropmissing!(data)
+    #data = dropmissing(data[:, StatsModels.termvars(f)])
 
     if length(data) < minobs
         #throw("Too few observations")
@@ -64,7 +66,7 @@ end
 function StatsBase.fit(
     ::Type{BasicReg},
     formula::FormulaTerm,
-    data::DataMatrix
+    data::TimelineTable
 )
     quick_reg(data, formula)
 end
@@ -172,12 +174,12 @@ This will work with any RegressionModel provided as long as it provides methods 
 that correspond to names stored in the MARKET_DATA_CACHE and a `coef` method. The model should be linear.
 """
 # this might be too generalized...
-function StatsBase.predict(rr::RegressionModel, data::DataMatrix)
+function StatsBase.predict(rr::RegressionModel, data::TimelineTable)
     resp, pred = dropmissing_modelcols(rr.formula, data)
     predict(rr, pred)
 end
 
-function dropmissing_modelcols(f, data::DataMatrix)
+function dropmissing_modelcols(f, data::TimelineTable)
     sc = schema(f, data)
 
     data = dropmissing(data[:, Symbol.(keys(sc))])

@@ -5,7 +5,7 @@ Statistics.std(rr::RegressionModel) = sqrt(var(rr))
 # it seems like I want some kind of formula with a similar minobs option for a lot
 # of these functions as well.
 function Statistics.var(
-    data::DataMatrix,
+    data::TimelineTable,
     col_firm::Symbol,
     col_market::Symbol;
     minobs::Real=0.8
@@ -21,7 +21,7 @@ function Statistics.var(
 end
 
 function Statistics.std(
-    data::DataMatrix,
+    data::TimelineTable,
     col_firm::Symbol,
     col_market::Symbol;
     minobs::Real=0.8
@@ -46,7 +46,7 @@ is calculated for the MARKET_DATA_CACHE.
 
 These functions treat missing returns in the period implicitly as a zero return.
 """
-function bh_return(data::DataMatrix, col)
+function bh_return(data::TimelineTable, col)
     bh_return(data[:, col])
 end
 
@@ -62,7 +62,7 @@ based off of the value provided (typically a market wide return).
 These functions treat missing returns in the period implicitly as a zero return.
 """
 function bhar(
-    data::DataMatrix,
+    data::TimelineTable,
     firm_col::Symbol,
     mkt_col::Symbol;
     minobs::Real=0.8
@@ -70,24 +70,29 @@ function bhar(
     if minobs < 1
         minobs = bdayscount(data.cal, data.dt_min, data.dt_max) * minobs
     end
-    m = dropmissing(data[:, [firm_col, mkt_col]]).matrix
+    select!(data, [firm_col, mkt_col])
+    dropmissing!(data)
     if size(m, 1) < minobs
         return missing
     end
-    bhar(m[:, 1], m[:, 2])
+    bhar(m[:, firm_col], m[:, market_col])
 end
 
 function bhar(
-    data::DataMatrix,
-    rr::RegressionModel
+    data::TimelineTable,
+    rr::RegressionModel;
+    minobs::Real=0.8
 )
     if minobs < 1
-        minobs = bdayscount(data.cal, data.dt_min, data.dt_max) * minobs
+        minobs = bdayscount(data.calendar, data.dates.left, data.dates.right) * minobs
     end
-    resp, pred = dropmissing_modelcols(rr.formula, data)
-    if length(resp) < minobs
+    select!(data, StatsModels.termvars(rr.formula))
+    dropmissing!(data)
+    if length(data) < minobs
         return missing
     end
+    sch = apply_schema(rr.formula, schema(rr.formula, data))
+    resp, pred = modelcols(sch, data)
     bhar(resp, predict(rr, pred))
 end
 
@@ -105,7 +110,7 @@ undervalue extreme returns compared to buy and hold returns (bh_return or bhar).
 These functions treat missing returns in the period implicitly as a zero return.
 """
 function car(
-    data::DataMatrix,
+    data::TimelineTable,
     firm_col::Symbol,
     mkt_col::Symbol;
     minobs::Real=0.8
@@ -121,14 +126,14 @@ function car(
 end
 
 function car(
-    data::DataMatrix,
+    data::TimelineTable,
     rr::RegressionModel;
     minobs::Real=.8
 )
     if minobs < 1
         minobs = bdayscount(data.cal, data.dt_min, data.dt_max) * minobs
     end
-    resp, pred = dropmissing_modelcols(rr, data::DataMatrix)
+    resp, pred = dropmissing_modelcols(rr, data)
     if length(resp) < minobs
         return missing
     end

@@ -19,8 +19,8 @@ using IntervalSets
 ##############################################################################
     
 # types and functions for fast CAR calculations
-export MarketData, DataMatrix, car, alpha, beta,
-    BasicReg, quick_reg,
+export MarketData, TimelineTable, car, alpha, beta,
+    BasicReg, quick_reg, DataVector,
     bh_return, bhar, MarketCalendar
 
 export getindex, values, names, istable, columnaccess, columns,
@@ -35,6 +35,8 @@ export coef, coefnames, responsename, nobs, dof_residual,
 
 export getindex
 
+export dropmissing!, select!
+
 ##############################################################################
 ##
 ## Load files
@@ -44,5 +46,6 @@ export getindex
 include("marketCalendar.jl")
 include("timelineData.jl")
 include("fastRegression.jl")
+include("calcFunctions.jl")
 
 end

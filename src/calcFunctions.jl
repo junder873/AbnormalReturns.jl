@@ -88,12 +88,20 @@ function bhar(
     end
     select!(data, StatsModels.termvars(rr.formula))
     dropmissing!(data)
-    if length(data) < minobs
+    if length(data) < minobs || length(data) <= length(data.colnames)
         return missing
     end
     sch = apply_schema(rr.formula, schema(rr.formula, data))
     resp, pred = modelcols(sch, data)
     bhar(resp, predict(rr, pred))
+
+end
+function bhar(
+    data::TimelineTable,
+    rr::Missing;
+    minobs::Real=0.8
+)
+    return missing
 end
 
 """
@@ -144,7 +152,7 @@ end
 function get_coefficient_val(rr::RegressionModel, coefname::String...)
     for x in coefname
         if x ∈ coefnames(rr)
-            return coef(rr)[col_pos(x, coefnames(rr))]
+            return coef(rr)[findfirst(x .== coefnames(rr))]
         end
     end
     @error("None of $(coefname) is in the RegressionModel model.")

@@ -7,10 +7,10 @@ using Reexport
 using Statistics
 using Dates
 using DataFrames
-using DataFrames: Index
 using IntervalSets
 @reexport using BusinessDays
 @reexport using StatsModels
+using ShiftedArrays
 
 ##############################################################################
 ##
@@ -21,7 +21,7 @@ using IntervalSets
 # types and functions for fast CAR calculations
 export MarketData, TimelineTable, car, alpha, beta,
     BasicReg, quick_reg, DataVector,
-    bh_return, bhar, MarketCalendar
+    bh_return, bhar, MarketCalendar, TimelineColumn
 
 export getindex, values, names, istable, columnaccess, columns,
     getcolumn, columnnames
@@ -35,7 +35,11 @@ export coef, coefnames, responsename, nobs, dof_residual,
 
 export getindex
 
-export dropmissing!, select!
+export dropmissing, select!
+
+export ClosedInterval, ..
+
+export lag, lead
 
 ##############################################################################
 ##
@@ -44,8 +48,10 @@ export dropmissing!, select!
 ##############################################################################
 
 include("marketCalendar.jl")
+include("dictIndex.jl")
 include("timelineData.jl")
 include("fastRegression.jl")
 include("calcFunctions.jl")
+include("statsModelsModelcols.jl")
 
 end

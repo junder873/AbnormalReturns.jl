@@ -11,7 +11,7 @@ function Statistics.var(
     minobs::Real=0.8
 )
     if minobs < 1
-        minobs = bdayscount(data.cal, data.dt_min, data.dt_max) * minobs
+        minobs = bdayscount(data.calendar, data.dates.left, data.dates.right) * minobs
     end
     m = dropmissing(data[:, [col_firm, col_market]]).matrix
     if size(m, 1) < minobs
@@ -68,7 +68,7 @@ function bhar(
     minobs::Real=0.8
 )
     if minobs < 1
-        minobs = bdayscount(data.cal, data.dt_min, data.dt_max) * minobs
+        minobs = bdayscount(data.calendar, data.dates.left, data.dates.right) * minobs
     end
     select!(data, [firm_col, mkt_col])
     dropmissing!(data)
@@ -91,7 +91,9 @@ function bhar(
     if length(data) < minobs || length(data) <= length(data.colnames)
         return missing
     end
-    sch = apply_schema(rr.formula, schema(rr.formula, data))
+    # since the values in a continuous term of mean/var/min/max are not used here,
+    # this just creates a schema from the available values without
+    sch = apply_schema(rr.formula, StatsModels.Schema(Dict(term.(names(temp)) .=> ContinuousTerm.(names(temp), 0, 0, 0, 0))))
     resp, pred = modelcols(sch, data)
     bhar(resp, predict(rr, pred))
 
@@ -124,7 +126,7 @@ function car(
     minobs::Real=0.8
 )
     if minobs < 1
-        minobs = bdayscount(data.cal, data.dt_min, data.dt_max) * minobs
+        minobs = bdayscount(data.calendar, data.dates.left, data.dates.right) * minobs
     end
     m = dropmissing(data[[firm_col, mkt_col]]).matrix
     if size(m, 1) < minobs
@@ -139,7 +141,7 @@ function car(
     minobs::Real=.8
 )
     if minobs < 1
-        minobs = bdayscount(data.cal, data.dt_min, data.dt_max) * minobs
+        minobs = bdayscount(data.calendar, data.dates.left, data.dates.right) * minobs
     end
     resp, pred = dropmissing_modelcols(rr, data)
     if length(resp) < minobs

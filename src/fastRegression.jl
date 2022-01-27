@@ -1,26 +1,28 @@
 struct BasicReg <: RegressionModel
+    nobs::Int
     coef::Vector{Float64}
     formula::FormulaTerm
     coefnames::Vector{String}
     yname::String
-    nobs::Int
     tss::Float64
     rss::Float64
     residuals::Union{Vector{Float64}, Nothing}
-    function BasicReg(coef, formula, coefnames, yname, nobs, tss, rss, residuals)
+    function BasicReg(nobs, coef, formula, coefnames, yname, tss, rss, residuals)
         @assert rss >= 0 "Residual sum of squares must be greater than 0"
         @assert tss >= 0 "Total sum of squares must be greater than 0"
         @assert nobs >= 0 "Observations must be greater than 0"
         @assert length(coef) == length(coefnames) "Number of coefficients must be same as number of coefficient names"
-        new(coef, formula, coefnames, yname, nobs, tss, rss, residuals)
+        new(nobs, coef, formula, coefnames, yname, tss, rss, residuals)
     end
+    BasicReg(x::Int) = new(x)
 end
 
 function quick_reg(
-    data::TimelineTable,
+    data::TimelineTableNoMissing,
     f::FormulaTerm;
     minobs::Real=0.8,
-    save_residuals::Bool=false
+    save_residuals::Bool=false,
+    save_prediction_matrix::Bool=true
 )
 
     if minobs < 1
@@ -32,16 +34,38 @@ function quick_reg(
     end
 
     select!(data, StatsModels.termvars(f))
-    dropmissing!(data)
     #data = dropmissing(data[:, StatsModels.termvars(f)])
 
-    if length(data) < minobs
-        #throw("Too few observations")
-        return missing
-    end
+    # if length(data) < minobs
+    #     #throw("Too few observations")
+    #     return missing
+    # end
+    # a Schema is normally built by running schema(f, data)
+    # but doing that repeatedly is quite slow and, in this case, does not
+    # provide any extra use since all of the columns are already known to be continuous
+    # and the other values (mean, var, min, max) are not used later
+    sch = apply_schema(f, StatsModels.Schema(Dict(term.(names(data)) .=> ContinuousTerm.(names(data), 0, 0, 0, 0))))
+    #resp, pred = modelcols(sch, data)
+    resp_timeline = modelcols(sch.lhs, data)
+    pred_timeline = modelcols(sch.rhs, data; save_matrix=save_prediction_matrix)
 
-    sch = apply_schema(f, schema(f, data))
-    resp, pred = modelcols(sch, data)
+    dates = dates_min_max(data.dates, resp_timeline.dates, pred_timeline.dates)
+    resp_timeline = resp_timeline[dates]
+    pred_timeline = pred_timeline[dates]
+    
+    missing_bdays = combine_missing_bdays(data_missing_bdays(resp_timeline), data_missing_bdays(pred_timeline))
+    if missing_bdays !== nothing
+        resp = raw_values(resp_timeline)[Not(missing_bdays)]
+        pred = raw_values(pred_timeline)[Not(missing_bdays), :]
+    else
+        resp = raw_values(resp_timeline)
+        pred = raw_values(pred_timeline)
+    end
+    
+
+    if length(resp) < minobs
+        return BasicReg(0)
+    end
 
     coef = cholesky!(Symmetric(pred' * pred)) \ (pred' * resp)
     resid = resp .- pred * coef
@@ -50,11 +74,11 @@ function quick_reg(
     yname, xnames = coefnames(sch)
 
     BasicReg(
+        length(resp),
         coef,
         f,
         xnames,
         yname,
-        length(resp),
         tss,
         rss,
         save_residuals ? resid : nothing
@@ -179,11 +203,11 @@ function StatsBase.predict(rr::RegressionModel, data::TimelineTable)
     predict(rr, pred)
 end
 
-function dropmissing_modelcols(f, data::TimelineTable)
-    sc = schema(f, data)
+# function dropmissing_modelcols(f, data::TimelineTable)
+#     sc = schema(f, data)
 
-    data = dropmissing(data[:, Symbol.(keys(sc))])
+#     data = dropmissing(data[:, Symbol.(keys(sc))])
 
-    sch = apply_schema(f, sc)
-    return modelcols(sch, data)
-end
+#     sch = apply_schema(f, sc)
+#     return modelcols(sch, data)
+# end

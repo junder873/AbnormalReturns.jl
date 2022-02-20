@@ -62,3 +62,9 @@ function BusinessDays.isbday(hc::MarketCalendar, dt::Date)::Bool
         return !isholiday(hc, dt)
     end
 end
+
+function BusinessDays.listbdays(hc::MarketCalendar, dt0::Date, dt1::Date)
+    BusinessDays.checkbounds(hc, dt0)
+    BusinessDays.checkbounds(hc, dt1)
+    hc.bdays[dt0 .<= hc.bdays .<= dt1]
+end

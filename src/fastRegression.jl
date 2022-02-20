@@ -17,6 +17,21 @@ struct BasicReg <: RegressionModel
     BasicReg(x::Int) = new(x)
 end
 
+function create_pred_matrix(data::TimelineTableNoMissing, sch)
+    if data.regression_cache === nothing || data.regression_cache.terms != sch.rhs
+        temp_data = data.parent[:, internal_termvars(sch.rhs)]
+        mat = modelcols(sch.rhs, temp_data)
+        data.parent.regression_cache = RegressionCache(
+            sch.rhs,
+            mat,
+            temp_data.dates,
+            nothing,
+            data.calendar
+        )
+    end
+end
+
+
 function quick_reg(
     data::TimelineTableNoMissing,
     f::FormulaTerm;
@@ -32,36 +47,32 @@ function quick_reg(
     if !StatsModels.omitsintercept(f) & !StatsModels.hasintercept(f)
         f = FormulaTerm(f.lhs, InterceptTerm{true}() + f.rhs)
     end
-
-    select!(data, StatsModels.termvars(f))
+    select!(data, internal_termvars(f))
     #data = dropmissing(data[:, StatsModels.termvars(f)])
 
-    # if length(data) < minobs
-    #     #throw("Too few observations")
-    #     return missing
-    # end
+    if length(data) < minobs
+        #throw("Too few observations")
+        return BasicReg(length(data))
+    end
     # a Schema is normally built by running schema(f, data)
     # but doing that repeatedly is quite slow and, in this case, does not
     # provide any extra use since all of the columns are already known to be continuous
     # and the other values (mean, var, min, max) are not used later
-    sch = apply_schema(f, StatsModels.Schema(Dict(term.(names(data)) .=> ContinuousTerm.(names(data), 0, 0, 0, 0))))
-    #resp, pred = modelcols(sch, data)
-    resp_timeline = modelcols(sch.lhs, data)
-    pred_timeline = modelcols(sch.rhs, data; save_matrix=save_prediction_matrix)
+    sch = apply_schema(
+        f,
+        StatsModels.Schema(
+            Dict(
+                term.(StatsModels.termvars(f)) .=> ContinuousTerm.(StatsModels.termvars(f), 0.0, 0.0, 0.0, 0.0))
+            ),
+    )
 
-    dates = dates_min_max(data.dates, resp_timeline.dates, pred_timeline.dates)
-    resp_timeline = resp_timeline[dates]
-    pred_timeline = pred_timeline[dates]
-    
-    missing_bdays = combine_missing_bdays(data_missing_bdays(resp_timeline), data_missing_bdays(pred_timeline))
-    if missing_bdays !== nothing
-        resp = raw_values(resp_timeline)[Not(missing_bdays)]
-        pred = raw_values(pred_timeline)[Not(missing_bdays), :]
-    else
-        resp = raw_values(resp_timeline)
-        pred = raw_values(pred_timeline)
+    if save_prediction_matrix
+        create_pred_matrix(data, sch)
     end
-    
+
+    resp, pred = modelcols(sch, data)
+    #resp = modelcols(sch.lhs, data)
+    #pred = modelcols(sch.rhs, data; save_matrix=save_prediction_matrix)
 
     if length(resp) < minobs
         return BasicReg(0)

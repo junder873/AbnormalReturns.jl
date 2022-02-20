@@ -43,109 +43,67 @@ function shift(data::DataVector, shifts::Int, cal::MarketCalendar)
 end
 
 
-# function StatsModels.modelcols(ll::StatsModels.LagLeadTerm{<:Any, F}, data::TimelineTableNoMissing) where F
-#     x = data[ll.term.sym]
-#     if F == lag
-#         l_change = ll.nsteps
-#         r_change = min(ll.nsteps, bdayscount(data.calendar, x.dates.right, data.celendar.dtmax))
-#         lost_obs = r_change - l_change
-#     else
-#         l_change = -1 * min(ll.nsteps, bdayscount(data.calendar, data.calendar.dtmin, x.dates.left))
-#         r_change = -1 * ll.nsteps
-#         lost_obs = l_change - r_change
-#     end
-#     dt_min = advancebdays(data.calendar, x.dates.left, l_change)
-#     dt_max = advancebdays(data.calendar, x.dates.right, r_change)
-#     # need to deal with case that there are not enough extra days in calendar, in which case
-#     # remove some from the end
-#     new_data = if F == lag # if lost_obs == 0, then just have the same vector
-#         raw_values(x)[1:end-lost_obs]
-#     else
-#         raw_values(x)[1+lost_obs:end]
-#     end
-#     new_missings = if x.missing_bdays === nothing
-#         nothing
-#     else
-#         filter(x -> x <= length(new_data), x.missing_bdays) |> Set
-#     end
-#     DataVector(new_data, new_missings, dt_min .. dt_max)
-# end
+StatsModels.modelcols(t::FormulaTerm, d::TimelineTableNoMissing) = (modelcols(t.lhs,d), modelcols(t.rhs, d))
+StatsModels.modelcols(t::InterceptTerm{true}, d::TimelineTableNoMissing) = ones(length(d))
+StatsModels.modelcols(t::InterceptTerm{false}, d::TimelineTableNoMissing) = Matrix{Float64}(undef, length(d), 0)
 
-# function StatsModels.modelcols(t::ContinuousTerm, d::TimelineTableNoMissing)
-#     return d[t.sym]
-# end
-
-# function StatsModels.modelcols(t::InteractionTerm, d::TimelineTableNoMissing)
-#     return *([modelcols(x, d) for x in t.terms]...)
-# end
-
-# function StatsModels.modelcols(t::InterceptTerm{true}, d::TimelineTableNoMissing)
-#     dates = d.calendar.dtmin .. d.calendar.dtmax
-#     l = bdayscount(d.calendar, dates.left, dates.right) + 1
-#     return DataVector(ones(l), nothing, dates, d.calendar)
-# end
-
-function StatsModels.modelcols(terms::MatrixTerm, data::TimelineTableNoMissing; save_matrix::Bool=true)
+function StatsModels.modelcols(terms::MatrixTerm, data::TimelineTableNoMissing)
+    # I did build another getindex function for this, but I need to combine the missing days from the new dataset
     if data.regression_cache !== nothing && terms == data.regression_cache.terms
+        r = date_range(data.calendar, data.regression_cache.dates, data.dates)
+        if data.missing_bdays !== nothing
+            r = r[Not(data.missing_bdays)]
+        end
 
-        return data.regression_cache.rhs_mat
+        return data.regression_cache.data[r, :]
     end
-    out = hcat([modelcols(tt, data) for tt in terms.terms]...)
-    #println("here2")
-    if save_matrix
-        data.parent.regression_cache = RegressionCache(
-            terms,
-            out
-        )
-    end
-    return out
+    reduce(hcat, [modelcols(tt, data) for tt in terms.terms])
+    
+    #modelcols.(terms, Ref(data))
+    #out = modelcols(terms, columntable(data))
+    # if save_matrix
+    #     data.parent.regression_cache = RegressionCache(
+    #         terms,
+    #         out
+    #     )
+    # end
+    #return out
 end
 
-# function Base.hcat(data::DataVector...)
-#     dates = dates_min_max(data_dates.(data)...)
-#     data = [y[dates] for y in data]
-#     # println(dates)
-#     # println(data_dates.(data))
-#     # println(length(data))
-#     # println(length.(data))
-#     mat = hcat(raw_values.(data)...)
-#     # display(mat)
-#     # println(typeof(mat))
-#     missing_bdays = combine_missing_bdays(data_missing_bdays.(data)...)
-#     #display(missing_bdays)
-#     return DataMatrix(mat, missing_bdays, dates, data[1].calendar)
-# end
+StatsModels.modelcols(t::ContinuousTerm, data::TimelineTableNoMissing) = data[:, t.sym]
+function StatsModels.modelcols(ft::FunctionTerm{Fo, Fa, Names}, data::TimelineTableNoMissing) where {Fo,Fa,Names}
+    ft.fanon.((data[:, n] for n in Names)...)
+end
 
+function StatsModels.modelcols(t::InteractionTerm, data::TimelineTableNoMissing)
+    StatsModels.row_kron_insideout(*, (modelcols(term, data) for term in t.terms)...)
+end
 
+function StatsModels.modelcols(ll::StatsModels.LeadLagTerm{<:Any, F}, data::TimelineTableNoMissing) where F
+    #println(F.instance)
+    data[:, F.instance(ll.term.sym, ll.nsteps)]
+end
 
-# function Base.:(*)(x::DataVector...)
-#     dates = dates_min_max(data_dates.(x)...)
-#     x = (i[dates] for i in x)
-#     vec = (*).(raw_values.(x)...)
-#     missing_bdays = combine_missing_bdays(data_missing_bdays.(x)...)
-#     DataVector(vec, missing_bdays, dates, x[1].calendar)
-# end
+"""
+These are largely copied from StatsModels, I just am returning a TimelineColumn and have a special condition
+for the lag/lead term
+"""
+internal_termvars(::AbstractTerm) = TimelineColumn[]
+internal_termvars(t::Union{Term, CategoricalTerm, ContinuousTerm}) = [TimelineColumn(t.sym)]
+internal_termvars(t::InteractionTerm) = mapreduce(internal_termvars, union, t.terms)
+internal_termvars(t::StatsModels.TupleTerm) = mapreduce(internal_termvars, union, t, init=TimelineColumn[])
+internal_termvars(t::MatrixTerm) = internal_termvars(t.terms)
+internal_termvars(t::FormulaTerm) = union(internal_termvars(t.lhs), internal_termvars(t.rhs))
+internal_termvars(t::FunctionTerm{Fo,Fa,names}) where {Fo,Fa,names} = collect(TimelineColumn.(names))
+function internal_termvars(t::FunctionTerm{F}) where F<:Union{typeof(lead), typeof(lag)}
+    f = nameof(F.instance) == :lead ? lead : lag
+    if length(t.args_parsed) == 1
+        [f(first(t.args_parsed).sym)]
+    elseif length(t.args_parsed) == 2
+        [f(first(t.args_parsed).sym, last(t.args_parsed).n)]
+    else
+        throw(ArgumentError("`$opname` terms require 1 or 2 arguments."))
+    end
+end
 
-# function Base.:(+)(x::DataVector...)
-#     dates = dates_min_max(data_dates.(x)...)
-#     x = (i[dates] for i in x)
-#     vec = (+).(raw_values.(x)...)
-#     missing_bdays = combine_missing_bdays(data_missing_bdays.(x)...)
-#     DataVector(vec, missing_bdays, dates, x[1].calendar)
-# end
-
-# function Base.:(-)(x::DataVector...)
-#     dates = dates_min_max(data_dates.(x)...)
-#     x = (i[dates] for i in x)
-#     vec = (-).(raw_values.(x)...)
-#     missing_bdays = combine_missing_bdays(data_missing_bdays.(x)...)
-#     DataVector(vec, missing_bdays, dates, x[1].calendar)
-# end
-
-# function Base.:(/)(x::DataVector...)
-#     dates = dates_min_max(data_dates.(x)...)
-#     x = (i[dates] for i in x)
-#     vec = (/).(raw_values.(x)...)
-#     missing_bdays = combine_missing_bdays(data_missing_bdays.(x)...)
-#     DataVector(vec, missing_bdays, dates, x[1].calendar)
-# end
+StatsModels.term(x::TimelineColumn) = StatsModels.term(x.name)

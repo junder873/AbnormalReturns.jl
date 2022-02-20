@@ -6,34 +6,34 @@ struct DataVector
     dates::ClosedInterval{Date}
 end
 
-mutable struct RegressionCache
-    terms::MatrixTerm
+mutable struct RegressionCache{T}
+    terms::MatrixTerm{T}
     data::Matrix{Float64}
     dates::ClosedInterval{Date}
     missing_bdays::Union{Nothing, Vector{Int}}
     calendar::MarketCalendar
 end
 
-mutable struct MarketData
+mutable struct MarketData{T}
     calendar::MarketCalendar
     colmapping::Dict{Symbol, Symbol} # data is stored either in marketdata or in firmdata
     marketdata::Dict{Symbol, DataVector} # column names as symbols
-    firmdata::Dict{Int, Dict{Symbol, DataVector}} # data stored by firm (int) and then by column name as symbol
+    firmdata::Dict{T, Dict{Symbol, DataVector}} # data stored by firm (int) and then by column name as symbol
     regression_cache::Union{Nothing, RegressionCache}
 end
 
 abstract type TimelineTable <: Tables.AbstractColumns end
 
-mutable struct TimelineTableNoMissing <: TimelineTable
-    parent::MarketData
+mutable struct TimelineTableNoMissing{T} <: TimelineTable
+    parent::MarketData{T}
     firmdata::Union{Nothing, Dict{Symbol, DataVector}}
     dates::ClosedInterval{Date}
     cols::DictIndex
     missing_bdays::Union{Nothing, Vector{Int}}# nothing if no missing bdays, empty vector if never calculated
 end
 
-mutable struct TimelineTableWithMissing <: TimelineTable
-    parent::MarketData
+mutable struct TimelineTableWithMissing{T} <: TimelineTable
+    parent::MarketData{T}
     firmdata::Union{Nothing, Dict{Symbol, DataVector}}
     dates::ClosedInterval{Date}
     cols::DictIndex
@@ -115,7 +115,7 @@ function MarketData(
     firm_dates = df_firms[:, date_col_firms]
     firm_ids = unique(df_firms[:, id_col])
 
-    firm_data = Dict{Int, Dict{Symbol, DataVector}}()
+    firm_data = Dict{eltype(firm_ids), Dict{Symbol, DataVector}}()
     sizehint!(firm_data, length(firm_ids))
 
     for firm_id in firm_ids
@@ -285,7 +285,7 @@ function Base.getindex(data::MarketData, col::TimelineColumn)
     return shift(out, col.shifts, data.calendar)
 end
 
-function Base.getindex(data::MarketData, id::Int, col::TimelineColumn)
+function Base.getindex(data::MarketData{T}, id::T, col::TimelineColumn) where {T}
     if !haskey(data.colmapping, Symbol(col))
         throw("Column is not in the data")
     end
@@ -303,19 +303,19 @@ end
 
 
 function Base.getindex(
-    data::MarketData,
-    id::Int,
+    data::MarketData{T},
+    id::T,
     dates::ClosedInterval{Date},
     cols::Vector
-    )
+    ) where {T}
     data[id, dates, TimelineColumn.(cols)]
 end
 function Base.getindex(
-    data::MarketData,
-    id::Int,
+    data::MarketData{T},
+    id::T,
     dates::ClosedInterval{Date},
     cols::Vector{TimelineColumn}
-    )
+    ) where {T}
     if !haskey(data.firmdata, id)
         throw("Data for firm id $id is not stored in the data")
     end
@@ -332,10 +332,10 @@ function Base.getindex(
     )
 end
 
-function Base.getindex(data::MarketData, id::Int, ::Colon, cols::Vector)
+function Base.getindex(data::MarketData{T}, id::T, ::Colon, cols::Vector) where {T}
     data[id, :, TimelineColumn.(cols)]
 end
-function Base.getindex(data::MarketData, id::Int, ::Colon, cols::Vector{TimelineColumn})
+function Base.getindex(data::MarketData{T}, id::T, ::Colon, cols::Vector{TimelineColumn}) where {T}
     if !haskey(data.firmdata, id)
         throw("Data for firm id $id is not stored in the data")
     end
@@ -354,11 +354,11 @@ function Base.getindex(data::MarketData, id::Int, ::Colon, cols::Vector{Timeline
     )
 end
 
-function Base.getindex(data::MarketData, id::Int, dates::ClosedInterval{Date}, ::Colon)
+function Base.getindex(data::MarketData{T}, id::T, dates::ClosedInterval{Date}, ::Colon) where {T}
     data[id, dates, TimelineColumn.(vcat([:date], Symbol.(keys(data.colmapping))))]
 end
 
-function Base.getindex(data::MarketData, id::Int, ::Colon, ::Colon)
+function Base.getindex(data::MarketData{T}, id::T, ::Colon, ::Colon) where {T}
     data[id, :, TimelineColumn.(vcat([:date], Symbol.(keys(data.colmapping))))]
 end
 
@@ -388,20 +388,9 @@ function Base.getindex(data::MarketData, ::Colon, cols::Vector{TimelineColumn})
     data[dates, cols]
 end
 
-Base.getindex(data::MarketData, id::Int, ::Colon, cols::Vector) = data[:, TimelineColumn.(cols)]
-function Base.getindex(data::MarketData, id::Int, ::Colon, cols::Vector{TimelineColumn})
-    dates = dates_min_max(data_dates.([data[id, col] for col in cols if Symbol(col) != :date])...)
-    data[dates, cols]
-end
-
 function Base.getindex(data::MarketData, ::Colon, ::Colon)
     cols = vcat([:date], [col for col in Symbol.(keys(data.colmapping)) if data.colmapping[col] == :marketdata])
     data[:, cols]
-end
-
-function Base.getindex(data::MarketData, id::Int, ::Colon, ::Colon)
-    cols = vcat([:date], [col for col in Symbol.(keys(data.colmapping))])
-    data[id, :, cols]
 end
 
 function Base.getindex(data::TimelineTable, dates::ClosedInterval{Date}, cols::Vector)

@@ -29,9 +29,6 @@ function Statistics.std(
     sqrt(var(data, col_firm, col_market; minobs))
 end
 
-Statistics.var(rr::Missing) = missing
-Statistics.std(rr::Missing) = missing
-
 bh_return(x) = prod(1 .+ skipmissing(x)) - 1
 bhar(x, y) = bh_return(x) - bh_return(y)
 
@@ -71,7 +68,7 @@ function bhar(
         minobs = bdayscount(data.calendar, data.dates.left, data.dates.right) * minobs
     end
     select!(data, [firm_col, mkt_col])
-    dropmissing!(data)
+    data = dropmissing(data)
     if size(m, 1) < minobs
         return missing
     end
@@ -79,31 +76,36 @@ function bhar(
 end
 
 function bhar(
-    data::TimelineTable,
+    data::TimelineTableNoMissing,
     rr::RegressionModel;
+    #f::FormulaTerm;
     minobs::Real=0.8
 )
     if minobs < 1
         minobs = bdayscount(data.calendar, data.dates.left, data.dates.right) * minobs
     end
-    select!(data, StatsModels.termvars(rr.formula))
-    dropmissing!(data)
-    if length(data) < minobs || length(data) <= length(data.colnames)
+    if !isdefined(rr, :coef)
+        return missing
+    end
+    f = rr.formula
+    select!(data, internal_termvars(rr.formula))
+    #data = dropmissing(data)
+    if length(data) < minobs || length(data) <= length(names(data))
         return missing
     end
     # since the values in a continuous term of mean/var/min/max are not used here,
     # this just creates a schema from the available values without
-    sch = apply_schema(rr.formula, StatsModels.Schema(Dict(term.(names(temp)) .=> ContinuousTerm.(names(temp), 0, 0, 0, 0))))
+    sch = apply_schema(
+        f,
+        StatsModels.Schema(
+            Dict(
+                term.(StatsModels.termvars(f)) .=> ContinuousTerm.(StatsModels.termvars(f), 0.0, 0.0, 0.0, 0.0))
+            ),
+    )
     resp, pred = modelcols(sch, data)
+    
     bhar(resp, predict(rr, pred))
 
-end
-function bhar(
-    data::TimelineTable,
-    rr::Missing;
-    minobs::Real=0.8
-)
-    return missing
 end
 
 """
@@ -181,6 +183,3 @@ This function finds the position of the coefficient name provided, defaults to s
 If the coefname is not in the regression, then this function returns an error.
 """
 beta(rr::RegressionModel, coefname::String...=["mkt", "mktrf", "vwretd", "ewretd"]...) = get_coefficient_val(rr, coefname...)
-
-alpha(rr::Missing, coefname::String...="(Intercept)") = missing
-beta(rr::Missing, coefname::String...="error") = missing

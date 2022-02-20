@@ -1,20 +1,20 @@
-struct BasicReg <: RegressionModel
+struct BasicReg{L,R} <: RegressionModel
     nobs::Int
+    formula::FormulaTerm{L,R}
     coef::Vector{Float64}
-    formula::FormulaTerm
     coefnames::Vector{String}
     yname::String
     tss::Float64
     rss::Float64
     residuals::Union{Vector{Float64}, Nothing}
-    function BasicReg(nobs, coef, formula, coefnames, yname, tss, rss, residuals)
+    function BasicReg(nobs, formula::FormulaTerm{L,R}, coef, coefnames, yname, tss, rss, residuals) where {L,R}
         @assert rss >= 0 "Residual sum of squares must be greater than 0"
         @assert tss >= 0 "Total sum of squares must be greater than 0"
         @assert nobs >= 0 "Observations must be greater than 0"
         @assert length(coef) == length(coefnames) "Number of coefficients must be same as number of coefficient names"
-        new(nobs, coef, formula, coefnames, yname, tss, rss, residuals)
+        new{L,R}(nobs, formula, coef, coefnames, yname, tss, rss, residuals)
     end
-    BasicReg(x::Int) = new(x)
+    BasicReg(x::Int, f::FormulaTerm{L,R}) where {L, R} = new{L,R}(x, f)
 end
 
 function create_pred_matrix(data::TimelineTableNoMissing, sch)
@@ -52,7 +52,7 @@ function quick_reg(
 
     if length(data) < minobs
         #throw("Too few observations")
-        return BasicReg(length(data))
+        return BasicReg(length(data), f)
     end
     # a Schema is normally built by running schema(f, data)
     # but doing that repeatedly is quite slow and, in this case, does not
@@ -75,7 +75,7 @@ function quick_reg(
     #pred = modelcols(sch.rhs, data; save_matrix=save_prediction_matrix)
 
     if length(resp) < minobs
-        return BasicReg(0)
+        return BasicReg(0, f)
     end
 
     coef = cholesky!(Symmetric(pred' * pred)) \ (pred' * resp)
@@ -86,8 +86,8 @@ function quick_reg(
 
     BasicReg(
         length(resp),
-        coef,
         f,
+        coef,
         xnames,
         yname,
         tss,
@@ -181,16 +181,16 @@ end
 
 StatsBase.predict(mod::BasicReg, x) = x * coef(mod)
 
-StatsBase.coef(x::BasicReg) = x.coef
-StatsBase.coefnames(x::BasicReg) = x.coefnames
-StatsBase.responsename(x::BasicReg) = x.yname
+StatsBase.coef(x::BasicReg) = isdefined(x, :coef) ? x.coef : missing
+StatsBase.coefnames(x::BasicReg) = isdefined(x, :coefnames) ? x.coefnames : missing
+StatsBase.responsename(x::BasicReg) = isdefined(x, :yname) ? x.yname : missing
 StatsBase.nobs(x::BasicReg) = x.nobs
-StatsBase.dof_residual(x::BasicReg) = nobs(x) - length(coef(x))
+StatsBase.dof_residual(x::BasicReg) = isdefined(x, :coef) ? nobs(x) - length(coef(x)) : missing
 StatsBase.r2(x::BasicReg) = 1 - (rss(x) / deviance(x))
 StatsBase.adjr2(x::BasicReg) = 1 - rss(x) / deviance(x) * (nobs(x) - 1) / dof_residual(x)
 StatsBase.islinear(x::BasicReg) = true
-StatsBase.deviance(x::BasicReg) = x.tss
-StatsBase.rss(x::BasicReg) = x.rss
+StatsBase.deviance(x::BasicReg) = isdefined(x, :tss) ? x.tss : missing
+StatsBase.rss(x::BasicReg) = isdefined(x, :rss) ? x.rss : missing
 function StatsBase.residuals(x::BasicReg)
     if x.residuals === nothing
         @error("To access residuals, run `cache_reg` with the option `save_residuals=true`")

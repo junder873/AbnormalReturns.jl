@@ -1,16 +1,11 @@
 ## timelineData
 
-- Getting a lot of data still spends quite a while in GC (20% over 170,000 items)
-  - It is still reasonably fast, less than 3 seconds
-- It would be useful to not require Float64, removing this creates some type instability
-  - I think this needs a type on DataMatrix and MarketData
-- Once dropmissing is called, a lot of the functions stop working correctly
-  - dropmissing might need to return a different type, perhaps AxisArrays?
-  - Storage and access might just need to be two different types...
-  - Looking closer at MatrixTable which is default in Tables.jl might make the most sense
-- I also wonder about building this on top of AxisArrays
-  - My only concern is joining and missing data
-    - Doing a test hcat, it returns a simple Matrix, which might not fit my needs since I would need to build a table interface on top of that
+- I think what would help is to make the inital calls more lazy
+  - StatsModels just needs access to a vector, so no need to build a matrix multiple times
+- Store the data in Dicts that access a single column
+- When the data is accessed, do not copy the data, just reference the parent and the data
+  - This will need to be a mutable struct to allow for dropmissing (which is just a Bool)
+  - also need some column selection
 
 ## fastRegression
 

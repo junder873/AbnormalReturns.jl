@@ -1,45 +1,81 @@
-struct BasicReg <: RegressionModel
+struct BasicReg{L,R} <: RegressionModel
+    nobs::Int
+    formula::FormulaTerm{L,R}
     coef::Vector{Float64}
-    formula::FormulaTerm
     coefnames::Vector{String}
     yname::String
-    nobs::Int
     tss::Float64
     rss::Float64
     residuals::Union{Vector{Float64}, Nothing}
-    function BasicReg(coef, formula, coefnames, yname, nobs, tss, rss, residuals)
+    function BasicReg(nobs, formula::FormulaTerm{L,R}, coef, coefnames, yname, tss, rss, residuals) where {L,R}
         @assert rss >= 0 "Residual sum of squares must be greater than 0"
         @assert tss >= 0 "Total sum of squares must be greater than 0"
         @assert nobs >= 0 "Observations must be greater than 0"
         @assert length(coef) == length(coefnames) "Number of coefficients must be same as number of coefficient names"
-        new(coef, formula, coefnames, yname, nobs, tss, rss, residuals)
+        new{L,R}(nobs, formula, coef, coefnames, yname, tss, rss, residuals)
+    end
+    BasicReg(x::Int, f::FormulaTerm{L,R}) where {L, R} = new{L,R}(x, f)
+end
+
+function create_pred_matrix(data::TimelineTable{false}, sch)
+    if data.regression_cache === nothing || data.regression_cache.terms != sch.rhs
+        temp_data = data.parent[:, internal_termvars(sch.rhs)]
+        mat = modelcols(sch.rhs, temp_data)
+        data.parent.regression_cache = RegressionCache(
+            sch.rhs,
+            mat,
+            temp_data.dates,
+            nothing,
+            data.calendar
+        )
     end
 end
 
+
 function quick_reg(
-    data::DataMatrix,
+    data::TimelineTable{false},
     f::FormulaTerm;
     minobs::Real=0.8,
-    save_residuals::Bool=false
+    save_residuals::Bool=false,
+    save_prediction_matrix::Bool=true
 )
 
     if minobs < 1
-        minobs = bdayscount(data.cal, data.dt_min, data.dt_max) * minobs
+        minobs = bdayscount(data.calendar, data.dates.left, data.dates.right) * minobs
     end
 
     if !StatsModels.omitsintercept(f) & !StatsModels.hasintercept(f)
         f = FormulaTerm(f.lhs, InterceptTerm{true}() + f.rhs)
     end
-
-    data = dropmissing(data[:, StatsModels.termvars(f)])
+    select!(data, internal_termvars(f))
 
     if length(data) < minobs
         #throw("Too few observations")
-        return missing
+        return BasicReg(length(data), f)
+    end
+    # a Schema is normally built by running schema(f, data)
+    # but doing that repeatedly is quite slow and, in this case, does not
+    # provide any extra use since all of the columns are already known to be continuous
+    # and the other values (mean, var, min, max) are not used later
+    sch = apply_schema(
+        f,
+        StatsModels.Schema(
+            Dict(
+                term.(StatsModels.termvars(f)) .=> ContinuousTerm.(StatsModels.termvars(f), 0.0, 0.0, 0.0, 0.0))
+            ),
+    )
+
+    if save_prediction_matrix
+        create_pred_matrix(data, sch)
     end
 
-    sch = apply_schema(f, schema(f, data))
     resp, pred = modelcols(sch, data)
+    #resp = modelcols(sch.lhs, data)
+    #pred = modelcols(sch.rhs, data; save_matrix=save_prediction_matrix)
+
+    if length(resp) < minobs
+        return BasicReg(0, f)
+    end
 
     coef = cholesky!(Symmetric(pred' * pred)) \ (pred' * resp)
     resid = resp .- pred * coef
@@ -48,23 +84,21 @@ function quick_reg(
     yname, xnames = coefnames(sch)
 
     BasicReg(
-        coef,
+        length(resp),
         f,
+        coef,
         xnames,
         yname,
-        length(resp),
         tss,
         rss,
         save_residuals ? resid : nothing
     )
 end
 
-##
-
 function StatsBase.fit(
     ::Type{BasicReg},
     formula::FormulaTerm,
-    data::DataMatrix
+    data::TimelineTable{false}
 )
     quick_reg(data, formula)
 end
@@ -108,52 +142,19 @@ of dates. Designed to quickly estimate Fama French predicted returns.
     used.
 - `save_residuals::Bool=false`: Whether or not to save the residuals in the regression
 """
-function cache_reg(
-    id::Int,
-    est_min::Date,
-    est_max::Date;
-    cols_market::Union{Nothing, Vector{String}}=nothing,
-    col_firm::String="ret",
-    minobs::Real=.8,
-    calendar="CrspMarketCalendar",
-    save_residuals::Bool=false
-)
-    if minobs < 1
-        minobs = bdayscount(calendar, est_min, est_max) * minobs
-    end
-    if cols_market === nothing
-        cols_market = MARKET_DATA_CACHE.cols
-    end
-    y, x = get_firm_market_data(id, est_min, est_max; cols_market, col_firm)
-    if any(ismissing.(y))
-        return missing
-    end
-    try
-        quick_reg(
-            y,
-            x,
-            cols_market,
-            col_firm;
-            minobs,
-            save_residuals
-        )
-    catch
-        println(id, est_min, est_max)
-    end
-end
 
 StatsBase.predict(mod::BasicReg, x) = x * coef(mod)
 
-StatsBase.coef(x::BasicReg) = x.coef
-StatsBase.coefnames(x::BasicReg) = x.coefnames
-StatsBase.responsename(x::BasicReg) = x.yname
+StatsBase.coef(x::BasicReg) = isdefined(x, :coef) ? x.coef : missing
+StatsBase.coefnames(x::BasicReg) = isdefined(x, :coefnames) ? x.coefnames : missing
+StatsBase.responsename(x::BasicReg) = isdefined(x, :yname) ? x.yname : missing
 StatsBase.nobs(x::BasicReg) = x.nobs
-StatsBase.dof_residual(x::BasicReg) = nobs(x) - length(coef(x))
+StatsBase.dof_residual(x::BasicReg) = isdefined(x, :coef) ? nobs(x) - length(coef(x)) : missing
 StatsBase.r2(x::BasicReg) = 1 - (rss(x) / deviance(x))
 StatsBase.adjr2(x::BasicReg) = 1 - rss(x) / deviance(x) * (nobs(x) - 1) / dof_residual(x)
 StatsBase.islinear(x::BasicReg) = true
-StatsBase.deviance(x::BasicReg) = x.tss
-StatsBase.rss(x::BasicReg) = x.rss
+StatsBase.deviance(x::BasicReg) = isdefined(x, :tss) ? x.tss : missing
+StatsBase.rss(x::BasicReg) = isdefined(x, :rss) ? x.rss : missing
 function StatsBase.residuals(x::BasicReg)
     if x.residuals === nothing
         @error("To access residuals, run `cache_reg` with the option `save_residuals=true`")
@@ -172,16 +173,24 @@ This will work with any RegressionModel provided as long as it provides methods 
 that correspond to names stored in the MARKET_DATA_CACHE and a `coef` method. The model should be linear.
 """
 # this might be too generalized...
-function StatsBase.predict(rr::RegressionModel, data::DataMatrix)
-    resp, pred = dropmissing_modelcols(rr.formula, data)
+function StatsBase.predict(rr::RegressionModel, data::TimelineTable{false})
+    f = rr.formula
+    select!(data, internal_termvars(f))
+    
+
+    # a Schema is normally built by running schema(f, data)
+    # but doing that repeatedly is quite slow and, in this case, does not
+    # provide any extra use since all of the columns are already known to be continuous
+    # and the other values (mean, var, min, max) are not used later
+    sch = apply_schema(
+        f,
+        StatsModels.Schema(
+            Dict(
+                term.(StatsModels.termvars(f)) .=> ContinuousTerm.(StatsModels.termvars(f), 0.0, 0.0, 0.0, 0.0))
+            ),
+    )
+
+    pred = modelcols(sch.rhs, data)
     predict(rr, pred)
 end
 
-function dropmissing_modelcols(f, data::DataMatrix)
-    sc = schema(f, data)
-
-    data = dropmissing(data[:, Symbol.(keys(sc))])
-
-    sch = apply_schema(f, sc)
-    return modelcols(sch, data)
-end

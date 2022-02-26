@@ -5,25 +5,25 @@ Statistics.std(rr::RegressionModel) = sqrt(var(rr))
 # it seems like I want some kind of formula with a similar minobs option for a lot
 # of these functions as well.
 function Statistics.var(
-    data::TimelineTable,
-    col_firm::Symbol,
-    col_market::Symbol;
+    data::TimelineTable{false},
+    col_firm,
+    col_market;
     minobs::Real=0.8
 )
     if minobs < 1
         minobs = bdayscount(data.calendar, data.dates.left, data.dates.right) * minobs
     end
-    m = dropmissing(data[:, [col_firm, col_market]]).matrix
-    if size(m, 1) < minobs
+    select!(data, [col_firm, col_market])
+    if length(data) < minobs
         return missing
     end
-    var(m[:, 1] .- m[:, 2])
+    var(data[:, col_firm] .- data[:, col_market])
 end
 
 function Statistics.std(
     data::TimelineTable,
-    col_firm::Symbol,
-    col_market::Symbol;
+    col_firm,
+    col_market;
     minobs::Real=0.8
 )
     sqrt(var(data, col_firm, col_market; minobs))
@@ -43,8 +43,16 @@ is calculated for the MARKET_DATA_CACHE.
 
 These functions treat missing returns in the period implicitly as a zero return.
 """
-function bh_return(data::TimelineTable, col)
-    bh_return(data[:, col])
+function bh_return(data::TimelineTable, col; minobs=0.8)
+    if minobs < 1
+        minobs = bdayscount(data.calendar, data.dates.left, data.dates.right) * minobs
+    end
+    t = data[:, col]
+    if length(t) < minobs
+        missing
+    else
+        bh_return(data[:, col])
+    end
 end
 
 
@@ -60,25 +68,20 @@ These functions treat missing returns in the period implicitly as a zero return.
 """
 function bhar(
     data::TimelineTable,
-    firm_col::Symbol,
-    mkt_col::Symbol;
+    firm_col,
+    mkt_col;
     minobs::Real=0.8
 )
     if minobs < 1
         minobs = bdayscount(data.calendar, data.dates.left, data.dates.right) * minobs
     end
     select!(data, [firm_col, mkt_col])
-    data = dropmissing(data)
-    if size(m, 1) < minobs
-        return missing
-    end
-    bhar(m[:, firm_col], m[:, market_col])
+    bh_return(data, firm_col; minobs) - bh_return(data, mkt_col; minobs)
 end
 
 function bhar(
-    data::TimelineTableNoMissing,
+    data::TimelineTable{false},
     rr::RegressionModel;
-    #f::FormulaTerm;
     minobs::Real=0.8
 )
     if minobs < 1
@@ -108,6 +111,17 @@ function bhar(
 
 end
 
+function sum_return(data::TimelineTable, col; minobs=0.8)
+    if minobs < 1
+        minobs = bdayscount(data.calendar, data.dates.left, data.dates.right) * minobs
+    end
+    t = data[:, col]
+    if length(t) < minobs
+        missing
+    else
+        sum(data[:, col])
+    end
+end
 """
     car(id::Int, date_start::Date, date_end::Date, cols_market::String="vwretd", col_firm::String="ret")
     car(id::Int, date_start::Date, date_end::Date, rr::Union{Missing, RegressionModel})
@@ -123,33 +137,46 @@ These functions treat missing returns in the period implicitly as a zero return.
 """
 function car(
     data::TimelineTable,
-    firm_col::Symbol,
-    mkt_col::Symbol;
+    firm_col,
+    mkt_col;
     minobs::Real=0.8
 )
     if minobs < 1
         minobs = bdayscount(data.calendar, data.dates.left, data.dates.right) * minobs
     end
-    m = dropmissing(data[[firm_col, mkt_col]]).matrix
-    if size(m, 1) < minobs
-        return missing
-    end
-    sum(m[:, 1] .- m[:, 2])
+    select!(data, [firm_col, mkt_col])
+
+    sum_return(data, firm_col; minobs) - sum_return(data, mkt_col)
 end
 
 function car(
-    data::TimelineTable,
+    data::TimelineTable{false},
     rr::RegressionModel;
     minobs::Real=.8
 )
     if minobs < 1
         minobs = bdayscount(data.calendar, data.dates.left, data.dates.right) * minobs
     end
-    resp, pred = dropmissing_modelcols(rr, data)
-    if length(resp) < minobs
+    if !isdefined(rr, :coef)
         return missing
     end
-    sum(resp .- predict(rr, pred))
+    f = rr.formula
+    select!(data, internal_termvars(rr.formula))
+
+    if length(data) < minobs || length(data) <= length(names(data))
+        return missing
+    end
+    # since the values in a continuous term of mean/var/min/max are not used here,
+    # this just creates a schema from the available values without
+    sch = apply_schema(
+        f,
+        StatsModels.Schema(
+            Dict(
+                term.(StatsModels.termvars(f)) .=> ContinuousTerm.(StatsModels.termvars(f), 0.0, 0.0, 0.0, 0.0))
+            ),
+    )
+    resp, pred = modelcols(sch, data)
+    sum(resp) - sum(predict(rr, pred))
 end
 
 

@@ -43,11 +43,11 @@ function shift(data::DataVector, shifts::Int, cal::MarketCalendar)
 end
 
 
-StatsModels.modelcols(t::FormulaTerm, d::TimelineTableNoMissing) = (modelcols(t.lhs,d), modelcols(t.rhs, d))
-StatsModels.modelcols(t::InterceptTerm{true}, d::TimelineTableNoMissing) = ones(length(d))
-StatsModels.modelcols(t::InterceptTerm{false}, d::TimelineTableNoMissing) = Matrix{Float64}(undef, length(d), 0)
+StatsModels.modelcols(t::FormulaTerm, d::TimelineTable) = (modelcols(t.lhs,d), modelcols(t.rhs, d))
+StatsModels.modelcols(t::InterceptTerm{true}, d::TimelineTable) = ones(length(d))
+StatsModels.modelcols(t::InterceptTerm{false}, d::TimelineTable) = Matrix{Float64}(undef, length(d), 0)
 
-function StatsModels.modelcols(terms::MatrixTerm, data::TimelineTableNoMissing)
+function StatsModels.modelcols(terms::MatrixTerm, data::TimelineTable)
     # I did build another getindex function for this, but I need to combine the missing days from the new dataset
     if data.regression_cache !== nothing && terms == data.regression_cache.terms
         r = date_range(data.calendar, data.regression_cache.dates, data.dates)
@@ -70,16 +70,16 @@ function StatsModels.modelcols(terms::MatrixTerm, data::TimelineTableNoMissing)
     #return out
 end
 
-StatsModels.modelcols(t::ContinuousTerm, data::TimelineTableNoMissing) = data[:, t.sym]
-function StatsModels.modelcols(ft::FunctionTerm{Fo, Fa, Names}, data::TimelineTableNoMissing) where {Fo,Fa,Names}
+StatsModels.modelcols(t::ContinuousTerm, data::TimelineTable) = data[:, t.sym]
+function StatsModels.modelcols(ft::FunctionTerm{Fo, Fa, Names}, data::TimelineTable) where {Fo,Fa,Names}
     ft.fanon.((data[:, n] for n in Names)...)
 end
 
-function StatsModels.modelcols(t::InteractionTerm, data::TimelineTableNoMissing)
+function StatsModels.modelcols(t::InteractionTerm, data::TimelineTable)
     StatsModels.row_kron_insideout(*, (modelcols(term, data) for term in t.terms)...)
 end
 
-function StatsModels.modelcols(ll::StatsModels.LeadLagTerm{<:Any, F}, data::TimelineTableNoMissing) where F
+function StatsModels.modelcols(ll::StatsModels.LeadLagTerm{<:Any, F}, data::TimelineTable) where F
     #println(F.instance)
     data[:, F.instance(ll.term.sym, ll.nsteps)]
 end
@@ -95,15 +95,16 @@ internal_termvars(t::StatsModels.TupleTerm) = mapreduce(internal_termvars, union
 internal_termvars(t::MatrixTerm) = internal_termvars(t.terms)
 internal_termvars(t::FormulaTerm) = union(internal_termvars(t.lhs), internal_termvars(t.rhs))
 internal_termvars(t::FunctionTerm{Fo,Fa,names}) where {Fo,Fa,names} = collect(TimelineColumn.(names))
-function internal_termvars(t::FunctionTerm{F}) where F<:Union{typeof(lead), typeof(lag)}
-    f = nameof(F.instance) == :lead ? lead : lag
-    if length(t.args_parsed) == 1
-        [f(first(t.args_parsed).sym)]
-    elseif length(t.args_parsed) == 2
-        [f(first(t.args_parsed).sym, last(t.args_parsed).n)]
-    else
-        throw(ArgumentError("`$opname` terms require 1 or 2 arguments."))
-    end
+function internal_termvars(t::StatsModels.LeadLagTerm{T, F}) where {T, F<:Union{typeof(lead), typeof(lag)}}
+    #f = nameof(F.instance) == :lead ? lead : lag
+    [F.instance(t.term.sym, t.nsteps)]
+    # if length(t.args_parsed) == 1
+    #     [F(first(t.args_parsed).sym)]
+    # elseif length(t.args_parsed) == 2
+    #     [F(first(t.args_parsed).sym, last(t.args_parsed).n)]
+    # else
+    #     throw(ArgumentError("`$opname` terms require 1 or 2 arguments."))
+    # end
 end
 
 StatsModels.term(x::TimelineColumn) = StatsModels.term(x.name)

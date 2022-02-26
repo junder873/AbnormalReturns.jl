@@ -6,7 +6,7 @@ struct DataVector
     dates::ClosedInterval{Date}
 end
 
-mutable struct RegressionCache{T}
+struct RegressionCache{T}
     terms::MatrixTerm{T}
     data::Matrix{Float64}
     dates::ClosedInterval{Date}
@@ -16,28 +16,22 @@ end
 
 mutable struct MarketData{T, MNames, FNames, N1, N2}
     calendar::MarketCalendar
-    colmapping::Dict{Symbol, Symbol} # data is stored either in marketdata or in firmdata
     marketdata::NamedTuple{MNames, NTuple{N1, DataVector}} # column names as symbols
     firmdata::Dict{T, NamedTuple{FNames, NTuple{N2, DataVector}}} # data stored by firm (int) and then by column name as symbol
     regression_cache::Union{Nothing, RegressionCache}
 end
 
-abstract type TimelineTable{T, MNames, FNames, N1, N2} <: Tables.AbstractColumns end
+struct AllowMissing{mssng} end
 
-mutable struct TimelineTableNoMissing{T, MNames, FNames, N1, N2} <: TimelineTable{T, MNames, FNames, N1, N2}
+mutable struct TimelineTable{Mssng, T, MNames, FNames, N1, N2} <: Tables.AbstractColumns
     parent::MarketData{T, MNames, FNames, N1, N2}
+    allow_missing::Type{AllowMissing{Mssng}}
     firmdata::Union{Nothing, NamedTuple{FNames, NTuple{N2, DataVector}}}
     dates::ClosedInterval{Date}
     cols::DictIndex
     missing_bdays::Union{Nothing, Vector{Int}}# nothing if no missing bdays, empty vector if never calculated
-end
-
-mutable struct TimelineTableWithMissing{T, MNames, FNames, N1, N2} <: TimelineTable{T, MNames, FNames, N1, N2}
-    parent::MarketData{T, MNames, FNames, N1, N2}
-    firmdata::Union{Nothing, NamedTuple{FNames, NTuple{N2, DataVector}}}
-    dates::ClosedInterval{Date}
-    cols::DictIndex
-    missing_bdays::Union{Nothing, Vector{Int}}# nothing if no missing bdays, empty vector if never calculated
+    produce_date::Bool# whether when converting to tables.jl interface to produce a date column
+    # by assumption, this will be the first column produced
 end
 
 function MarketData(
@@ -79,14 +73,6 @@ function MarketData(
 
     market_data = NamedTuple(valuecols_market .=> DataVector.(Tables.columns(df_market[:, valuecols_market]), Ref(df_market[:, date_col_market])))
 
-    col_map = Dict{Symbol, Symbol}()
-    for col in Symbol.(valuecols_market)
-        col_map[col] = :marketdata
-    end
-    for col in Symbol.(valuecols_firms)
-        col_map[col] = :firmdata
-    end
-
     check_all_businessdays(unique(df_firms[:, date_col_firms]), cal)
 
     gdf = groupby(df_firms, id_col)
@@ -123,7 +109,6 @@ function MarketData(
 
     MarketData(
         cal,
-        col_map,
         market_data,
         firm_data,
         nothing
@@ -157,16 +142,16 @@ function DataVector(data::AbstractVector, dates::AbstractVector{Date})
         j = findlast(!ismissing, data)
         data = data[i:j]
         dates = dates[i:j]
-        missing_days = findall(ismissing, data)
+        missing_days = Set(findall(ismissing, data))
         data = coalesce.(data, zero(nonmissingtype(eltype(data))))
     else
-        missing_days = Int[]
+        missing_days = nothing
     end
     
     
     DataVector(
         data,
-        length(missing_days) == 0 ? nothing : Set(missing_days),
+        missing_days,
         dates[1] .. dates[end]
     )
 end
@@ -254,11 +239,11 @@ function combine_missing_bdays(vals::Union{Nothing, Set{Int}}...)
 end
 
 function check_col(x::Symbol, g1, g2)
-    x == :date || x ∈ g1 || x ∈ g2
+    x ∈ g1 || x ∈ g2
 end
 
 function check_col(x::Vector{Symbol}, g1, g2)
-    any(check_col.(x, Ref(g1), Ref(g2)))
+    all(check_col.(x, Ref(g1), Ref(g2)))
 end
 
 check_col(x::Symbol, g1) = x ∈ g1
@@ -314,17 +299,18 @@ end
     if !haskey(data.firmdata, id)
         throw(ArgumentError("Data for firm id $id is not stored in the data"))
     end
-
     if !check_col(Symbol.(cols), MNames, FNames)
         throw(ArgumentError("Not all columns are in the data"))
     end
 
-    return TimelineTableNoMissing(
+    return TimelineTable(
         data,
+        AllowMissing{false},
         data.firmdata[id],
         dates,
         DictIndex(cols),
-        Int[]
+        Int[],
+        true
     )
 end
 
@@ -340,22 +326,24 @@ end
     end
 
     firmdata = data.firmdata[id]
-    dates = dates_min_max(data_dates.([data[id, col] for col in cols if Symbol(col) != :date]))
-    TimelineTableNoMissing(
+    dates = dates_min_max(data_dates.([data[id, col] for col in cols if Symbol(col)]))
+    TimelineTable(
         data,
+        AllowMissing{false},
         firmdata,
         dates,
         DictIndex(cols),
-        Int[]
+        Int[],
+        true
     )
 end
 
 @inline function Base.getindex(data::MarketData{T, MNames, FNames}, id::T, dates::ClosedInterval{Date}, ::Colon) where {T, MNames, FNames}
-    data[id, dates, TimelineColumn.([:date, MNames..., FNames...])]
+    data[id, dates, TimelineColumn.([MNames..., FNames...])]
 end
 
 @inline function Base.getindex(data::MarketData{T, MNames, FNames}, id::T, ::Colon, ::Colon) where {T, MNames, FNames}
-    data[id, :, TimelineColumn.([:date, MNames..., FNames...])]
+    data[id, :, TimelineColumn.([MNames..., FNames...])]
 end
 
 @inline function Base.getindex(data::MarketData, dates::ClosedInterval{Date}, cols::Vector)
@@ -369,23 +357,25 @@ end
         throw(ArgumentError("An ID must be supplied to access columns of firm data"))
     end
 
-    TimelineTableNoMissing(
+    TimelineTable(
         data,
+        AllowMissing{false},
         nothing,
         dates,
         DictIndex(cols),
-        Int[]
+        Int[],
+        true
     )
 end
 
 @inline Base.getindex(data::MarketData, ::Colon, cols::Vector) = data[:, TimelineColumn.(cols)]
 @inline function Base.getindex(data::MarketData, ::Colon, cols::Vector{TimelineColumn})
-    dates = dates_min_max(data_dates.([data[col] for col in cols if Symbol(col) != :date])...)
+    dates = dates_min_max(data_dates.([data[col] for col in cols])...)
     data[dates, cols]
 end
 
 @inline function Base.getindex(data::MarketData{T, MNames, FNames}, ::Colon, ::Colon) where {T, MNames, FNames}
-    data[:, [:date, MNames...]]
+    data[:, [MNames...]]
 end
 
 @inline function Base.getindex(data::TimelineTable, dates::ClosedInterval{Date}, cols::Vector)
@@ -411,7 +401,7 @@ end
     data[dates, names(data)]
 end
 
-function Base.getproperty(obj::TimelineTable{T, MNames, FNames}, sym::Symbol) where {T, MNames, FNames}
+function Base.getproperty(obj::TimelineTable{Mssngs, T, MNames, FNames}, sym::Symbol) where {Mssngs, T, MNames, FNames}
     if sym == :calendar
         obj.parent.calendar
     elseif sym == :marketdata
@@ -433,11 +423,11 @@ function Base.getindex(obj::TimelineTable, nm::Symbol)
     obj[TimelineColumn(nm)]
 end
 
-function Base.getindex(obj::TimelineTable{T, MNames, FNames}, nm::TimelineColumn) where {T, MNames, FNames}
+function Base.getindex(obj::TimelineTable, nm::TimelineColumn)
     shift(getproperty(obj, Symbol(nm)), nm.shifts, obj.calendar)
 end
 
-function get_dates(obj::TimelineTableNoMissing)
+function get_dates(obj::TimelineTable{false})
     out = listbdays(obj.calendar, obj.dates.left, obj.dates.right)
     if obj.missing_bdays !== nothing && length(obj.missing_bdays) == 0
         calculate_missing_bdays!(obj)
@@ -449,18 +439,15 @@ function get_dates(obj::TimelineTableNoMissing)
     end
 end
 
-function get_dates(obj::TimelineTableWithMissing)
-    listbdays(obj.calendar, dates.left, dates.right)
+function get_dates(obj::TimelineTable{true})
+    listbdays(obj.calendar, obj.dates.left, obj.dates.right)
 end
 
-function Base.getindex(obj::TimelineTableNoMissing, ::Colon, nm::Symbol)::Union{Vector{Date}, Vector{Float64}}
+function Base.getindex(obj::TimelineTable{false}, ::Colon, nm::Symbol)::Vector{Float64}
     obj[:, TimelineColumn(nm)]
 end
-function Base.getindex(obj::TimelineTableNoMissing, ::Colon, nm::TimelineColumn)::Union{Vector{Date}, Vector{Float64}}
-    if Symbol(nm) == :date
-        return obj.date
-    end
-    dates = dates_min_max(obj.dates, [obj[col].dates for col in names(obj) if Symbol(col) != :date]...)
+function Base.getindex(obj::TimelineTable{false}, ::Colon, nm::TimelineColumn)::Vector{Float64}
+    dates = dates_min_max(obj.dates, [obj[col].dates for col in names(obj)]...)
 
     vec = obj[nm]
     local_dates = dates_min_max(dates, vec.dates)
@@ -477,14 +464,11 @@ function Base.getindex(obj::TimelineTableNoMissing, ::Colon, nm::TimelineColumn)
     end
 end
 
-function Base.getindex(obj::TimelineTableWithMissing, ::Colon, nm::Symbol)::Union{Vector{Date}, Vector{Union{Missing, Float64}}}
+function Base.getindex(obj::TimelineTable{true}, ::Colon, nm::Symbol)::Vector{Union{Missing, Float64}}
     obj[:, TimelineColumn(nm)]
 end
-function Base.getindex(obj::TimelineTableWithMissing, ::Colon, nm::TimelineColumn)::Union{Vector{Date}, Vector{Union{Missing, Float64}}}
+function Base.getindex(obj::TimelineTable{true}, ::Colon, nm::TimelineColumn)::Vector{Union{Missing, Float64}}
 
-    if Symbol(nm) == :date
-        return obj.date
-    end
     vec = obj[nm]
     local_dates = dates_min_max(obj.dates, vec.dates)
     s = bdayscount(obj.calendar, vec.dates.left, local_dates.left) + 1
@@ -516,7 +500,7 @@ function Base.getindex(obj::TimelineTableWithMissing, ::Colon, nm::TimelineColum
 end
 
 function calculate_missing_bdays!(obj::TimelineTable)
-    col_dates = dates_min_max(obj.dates, [obj[col].dates for col in names(obj) if Symbol(col) != :date]...)
+    col_dates = dates_min_max(obj.dates, [obj[col].dates for col in names(obj)]...)
     out = Set{Int}()
     if obj.dates.left < col_dates.left # set 1:first available dates as missing
         union!(out, Set(1:bdayscount(obj.calendar, obj.dates.left, col_dates.left)))
@@ -529,7 +513,6 @@ function calculate_missing_bdays!(obj::TimelineTable)
         union!(out, r)
     end
     for col in names(obj)
-        Symbol(col) == :date && continue
         obj[col].missing_bdays === nothing && continue
         temp = adjust_missing_bdays(
             obj.calendar,
@@ -552,38 +535,46 @@ Base.names(x::TimelineTable) = x.cols.cols
 
 Tables.istable(::Type{<:TimelineTable}) = true
 Tables.columnaccess(::Type{<:TimelineTable}) = true
-function Tables.schema(m::TimelineTableNoMissing)
-    col_types = Type[]
-    for col in names(m)
-        if Symbol(col) == :date
-            push!(col_types, Date)
-        else
-            push!(col_types, Float64)
-        end
+function Tables.schema(obj::TimelineTable{mssngs}) where {mssngs}
+    col_sym = Tables.columnnames(obj)
+    col_types = fill(mssngs ? Union{Float64, Missing} : Float64, length(col_sym))
+    if obj.produce_date
+        col_sym = vcat(
+            [:date],
+            Tables.columnnames(obj)
+        )
+        col_types = vcat(
+            [Date],
+            col_types
+        )
     end
-    Tables.Schema(Tables.columnnames(m), col_types)
-end
-
-function Tables.schema(m::TimelineTableWithMissing)
-    col_types = Type[]
-    for col in names(m)
-        if Symbol(col) == :date
-            push!(col_types, Date)
-        else
-            push!(col_types, Union{Missing, Float64})
-        end
-    end
-    Tables.Schema(names(m), col_types)
+    Tables.Schema(col_sym, col_types)
 end
 
 Tables.columns(x::TimelineTable) = x
 function Tables.getcolumn(x::TimelineTable, i::Int)
+    if x.produce_date
+        i -= 1
+    end
     Tables.getcolumn(x, x.lookup[i])
 end
 function Tables.getcolumn(x::TimelineTable, nm::TimelineColumn)
     x[:, nm]
 end
-function Tables.getcolumn(x::TimelineTable, nm::Symbol)
+function Tables.getcolumn(x::TimelineTable{Mssngs, T, MNames, FNames}, nm::Symbol) where {Mssngs, T, MNames, FNames}
+    if nm == :date
+        return x.date
+    end
+    if nm ∈ MNames || nm ∈ FNames
+        return x[:, TimelineColumn(nm)]
+    end
+    if nm ∈ Tables.columnnames(x)
+        pos = findfirst(nm .== Tables.columnnames(x))
+        if x.produce_date
+            pos -= 1
+        end
+        return x[:, names(x)[pos]]
+    end
     p = Meta.parse(nm |> string)
     if typeof(p) <: Symbol
         Tables.getcolumn(x, TimelineColumn(nm))
@@ -602,10 +593,13 @@ function Tables.getcolumn(x::TimelineTable, nm::Symbol)
     end
 end
 
-Tables.columnnames(x::TimelineTable) = Symbol.(String.(names(x)))
+function Tables.columnnames(x::TimelineTable)
+    out = Symbol.(String.(names(x)))
+    x.produce_date ? vcat([:date], out) : out
+end
 
 
-function Base.length(x::TimelineTableNoMissing)
+function Base.length(x::TimelineTable{false})
     if (x.missing_bdays !== nothing && length(x.missing_bdays) == 0)
         calculate_missing_bdays!(x)
     end
@@ -613,7 +607,7 @@ function Base.length(x::TimelineTableNoMissing)
     return bdayscount(x.calendar, x.dates.left, x.dates.right) - sub + isbday(x.calendar, x.dates.right)
 end
 
-function Base.length(x::TimelineTableWithMissing)
+function Base.length(x::TimelineTable{true})
     bdayscount(x.calendar, x.dates.left, x.dates.right) + isbday(x.calendar, x.dates.right)
 end
 
@@ -622,26 +616,30 @@ function Base.length(x::DataVector)
     return length(raw_values(x)) - sub
 end
 
-DataFrames.dropmissing(x::TimelineTableNoMissing) = x
-DataFrames.allowmissing(x::TimelineTableWithMissing) = x
+DataFrames.dropmissing(x::TimelineTable{false}) = x
+DataFrames.allowmissing(x::TimelineTable{true}) = x
 
-function DataFrames.dropmissing(x::TimelineTableWithMissing)
-    TimelineTableNoMissing(
+function DataFrames.dropmissing(x::TimelineTable{true})
+    TimelineTable(
         x.parent,
+        AllowMissing{false},
         x.firmdata,
         x.dates,
         x.cols,
-        x.missing_bdays
+        x.missing_bdays,
+        x.produce_date
     )
 end
 
-function DataFrames.allowmissing(x::TimelineTableNoMissing)
-    TimelineTableWithMissing(
+function DataFrames.allowmissing(x::TimelineTable{false})
+    TimelineTable(
         x.parent,
+        AllowMissing{true},
         x.firmdata,
         x.dates,
         x.cols,
-        x.missing_bdays
+        x.missing_bdays,
+        x.produce_date
     )
 end
 

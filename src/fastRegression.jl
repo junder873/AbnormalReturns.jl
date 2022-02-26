@@ -17,7 +17,7 @@ struct BasicReg{L,R} <: RegressionModel
     BasicReg(x::Int, f::FormulaTerm{L,R}) where {L, R} = new{L,R}(x, f)
 end
 
-function create_pred_matrix(data::TimelineTableNoMissing, sch)
+function create_pred_matrix(data::TimelineTable{false}, sch)
     if data.regression_cache === nothing || data.regression_cache.terms != sch.rhs
         temp_data = data.parent[:, internal_termvars(sch.rhs)]
         mat = modelcols(sch.rhs, temp_data)
@@ -33,7 +33,7 @@ end
 
 
 function quick_reg(
-    data::TimelineTableNoMissing,
+    data::TimelineTable{false},
     f::FormulaTerm;
     minobs::Real=0.8,
     save_residuals::Bool=false,
@@ -48,7 +48,6 @@ function quick_reg(
         f = FormulaTerm(f.lhs, InterceptTerm{true}() + f.rhs)
     end
     select!(data, internal_termvars(f))
-    #data = dropmissing(data[:, StatsModels.termvars(f)])
 
     if length(data) < minobs
         #throw("Too few observations")
@@ -96,12 +95,10 @@ function quick_reg(
     )
 end
 
-##
-
 function StatsBase.fit(
     ::Type{BasicReg},
     formula::FormulaTerm,
-    data::TimelineTable
+    data::TimelineTable{false}
 )
     quick_reg(data, formula)
 end
@@ -145,39 +142,6 @@ of dates. Designed to quickly estimate Fama French predicted returns.
     used.
 - `save_residuals::Bool=false`: Whether or not to save the residuals in the regression
 """
-function cache_reg(
-    id::Int,
-    est_min::Date,
-    est_max::Date;
-    cols_market::Union{Nothing, Vector{String}}=nothing,
-    col_firm::String="ret",
-    minobs::Real=.8,
-    calendar="CrspMarketCalendar",
-    save_residuals::Bool=false
-)
-    if minobs < 1
-        minobs = bdayscount(calendar, est_min, est_max) * minobs
-    end
-    if cols_market === nothing
-        cols_market = MARKET_DATA_CACHE.cols
-    end
-    y, x = get_firm_market_data(id, est_min, est_max; cols_market, col_firm)
-    if any(ismissing.(y))
-        return missing
-    end
-    try
-        quick_reg(
-            y,
-            x,
-            cols_market,
-            col_firm;
-            minobs,
-            save_residuals
-        )
-    catch
-        println(id, est_min, est_max)
-    end
-end
 
 StatsBase.predict(mod::BasicReg, x) = x * coef(mod)
 
@@ -209,16 +173,24 @@ This will work with any RegressionModel provided as long as it provides methods 
 that correspond to names stored in the MARKET_DATA_CACHE and a `coef` method. The model should be linear.
 """
 # this might be too generalized...
-function StatsBase.predict(rr::RegressionModel, data::TimelineTable)
-    resp, pred = dropmissing_modelcols(rr.formula, data)
+function StatsBase.predict(rr::RegressionModel, data::TimelineTable{false})
+    f = rr.formula
+    select!(data, internal_termvars(f))
+    
+
+    # a Schema is normally built by running schema(f, data)
+    # but doing that repeatedly is quite slow and, in this case, does not
+    # provide any extra use since all of the columns are already known to be continuous
+    # and the other values (mean, var, min, max) are not used later
+    sch = apply_schema(
+        f,
+        StatsModels.Schema(
+            Dict(
+                term.(StatsModels.termvars(f)) .=> ContinuousTerm.(StatsModels.termvars(f), 0.0, 0.0, 0.0, 0.0))
+            ),
+    )
+
+    pred = modelcols(sch.rhs, data)
     predict(rr, pred)
 end
 
-# function dropmissing_modelcols(f, data::TimelineTable)
-#     sc = schema(f, data)
-
-#     data = dropmissing(data[:, Symbol.(keys(sc))])
-
-#     sch = apply_schema(f, sc)
-#     return modelcols(sch, data)
-# end

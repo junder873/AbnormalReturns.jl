@@ -6,19 +6,18 @@ struct DataVector
     dates::ClosedInterval{Date}
 end
 
-struct RegressionCache{T}
-    terms::MatrixTerm{T}
+struct RegressionCache
+    #terms::MatrixTerm{T}
     data::Matrix{Float64}
     dates::ClosedInterval{Date}
-    missing_bdays::Union{Nothing, Vector{Int}}
+    #missing_bdays::Union{Nothing, Vector{Int}}
     calendar::MarketCalendar
 end
 
 mutable struct MarketData{T, MNames, FNames, N1, N2}
     calendar::MarketCalendar
     marketdata::NamedTuple{MNames, NTuple{N1, DataVector}} # column names as symbols
-    firmdata::Dict{T, NamedTuple{FNames, NTuple{N2, DataVector}}} # data stored by firm (int) and then by column name as symbol
-    regression_cache::Union{Nothing, RegressionCache}
+    firmdata::Dict{T, NamedTuple{FNames, NTuple{N2, DataVector}}} # data stored by firm id and then by column name as symbol
 end
 
 struct AllowMissing{mssng} end
@@ -110,8 +109,7 @@ function MarketData(
     MarketData(
         cal,
         market_data,
-        firm_data,
-        nothing
+        firm_data
     )
 end
 
@@ -183,7 +181,7 @@ function adjust_missing_bdays(cal::MarketCalendar, missing_bdays::Vector{Int}, d
     end
     #if new_dates.left <= dates_missings.left
     missing_bdays = missing_bdays .+ (bdayscount(cal, new_dates.left, dates_missings.left))
-    e = bdayscount(cal, new_dates.left, new_dates.right) + 1
+    e = bdayscount(cal, new_dates.left, new_dates.right) + isbday(cal, new_dates.right)
     return missing_bdays[1 .<= missing_bdays .<= e]
 end
 
@@ -214,15 +212,22 @@ end
 #     DataVector(raw_values(data)[date_range(data, new_dates)], new_missings2, new_dates, data.calendar)
 # end
 
-function Base.getindex(data::RegressionCache, dates::ClosedInterval{Date})
+function Base.getindex(data::RegressionCache, dates::ClosedInterval{Date}, mssngs::Nothing)
     new_dates = dates_min_max(data.dates, dates)
     r = date_range(data.calendar, data.dates, new_dates)
-    new_missings = adjust_missing_bdays(data.calendar, data.dates, new_dates)
-    if new_missings === nothing
-        data.data[r, :]
-    else
-        data.data[r[Not(new_missings)], :]
-    end
+    data.data[r, :]
+    # new_missings = adjust_missing_bdays(data.calendar, data.dates, new_dates)
+    # if new_missings === nothing
+    #     data.data[r, :]
+    # else
+    #     data.data[r[Not(new_missings)], :]
+    # end
+end
+
+function Base.getindex(data::RegressionCache, dates::ClosedInterval{Date}, mssngs::Vector{Int})
+    new_dates = dates_min_max(data.dates, dates)
+    r = date_range(data.calendar, data.dates, new_dates)
+    data.data[r[Not(mssngs)], :]
 end
 
 function combine_missing_bdays(vals::Union{Nothing, Set{Int}}...)
@@ -326,7 +331,7 @@ end
     end
 
     firmdata = data.firmdata[id]
-    dates = dates_min_max(data_dates.([data[id, col] for col in cols if Symbol(col)]))
+    dates = dates_min_max(data_dates.([data[id, col] for col in cols]))
     TimelineTable(
         data,
         AllowMissing{false},
@@ -435,7 +440,7 @@ function get_dates(obj::TimelineTable{false})
     if obj.missing_bdays === nothing
         return out
     else
-        return out[Not(adjust_missing_bdays(obj.calendar, obj.missing_bdays, obj.dates, dates))]
+        return out[Not(obj.missing_bdays)]
     end
 end
 
@@ -539,14 +544,7 @@ function Tables.schema(obj::TimelineTable{mssngs}) where {mssngs}
     col_sym = Tables.columnnames(obj)
     col_types = fill(mssngs ? Union{Float64, Missing} : Float64, length(col_sym))
     if obj.produce_date
-        col_sym = vcat(
-            [:date],
-            Tables.columnnames(obj)
-        )
-        col_types = vcat(
-            [Date],
-            col_types
-        )
+        col_types[1] = Date
     end
     Tables.Schema(col_sym, col_types)
 end
@@ -663,3 +661,10 @@ data_missing_bdays(x::DataVector) = x.missing_bdays
 raw_values(x::RegressionCache) = x.data
 data_dates(x::RegressionCache) = x.dates
 data_missing_bdays(x::RegressionCache) = x.missing_bdays
+
+function Base.show(io::IO, data::MarketData{T, MNames, FNames}) where {T, MNames, FNames}
+    println(io, "MarketData with ID type $T with $(length(data.firmdata)) unique firms")
+    println(io, data.calendar)
+    println(io, "Market Columns: $(join(MNames, ", "))")
+    println(io, "Firm Columns: $(join(FNames, ", "))")
+end

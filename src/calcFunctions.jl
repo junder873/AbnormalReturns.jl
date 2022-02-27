@@ -8,7 +8,7 @@ function Statistics.var(
     data::TimelineTable{false},
     col_firm,
     col_market;
-    minobs::Real=0.8
+    minobs=0.8
 )
     if minobs < 1
         minobs = bdayscount(data.calendar, data.dates.left, data.dates.right) * minobs
@@ -24,13 +24,14 @@ function Statistics.std(
     data::TimelineTable,
     col_firm,
     col_market;
-    minobs::Real=0.8
+    minobs=0.8
 )
     sqrt(var(data, col_firm, col_market; minobs))
 end
 
 bh_return(x) = prod(1 .+ skipmissing(x)) - 1
 bhar(x, y) = bh_return(x) - bh_return(y)
+car(x, y) = sum(skipmissing(x)) - sum(skipmissing(y))
 
 # for firm data
 """
@@ -55,6 +56,113 @@ function bh_return(data::TimelineTable, col; minobs=0.8)
     end
 end
 
+function sum_return(data::TimelineTable, col; minobs=0.8)
+    if minobs < 1
+        minobs = bdayscount(data.calendar, data.dates.left, data.dates.right) * minobs
+    end
+    t = data[:, col]
+    if length(t) < minobs
+        missing
+    else
+        sum(data[:, col])
+    end
+end
+
+function simple_diff(
+    data::TimelineTable,
+    firm_col,
+    mkt_col,
+    fun;
+    minobs::Float64=0.8
+)
+    if minobs < 1
+        minobs = bdayscount(data.calendar, data.dates.left, data.dates.right) * minobs
+    end
+    select!(data, [firm_col, mkt_col])
+    fun(data, firm_col; minobs) - fun(data, mkt_col; minobs)
+end
+
+function pred_diff(
+    data::TimelineTable{false},
+    rr::RegressionModel,
+    fun;
+    minobs::Float64=0.8
+)
+    if minobs < 1
+        minobs = bdayscount(data.calendar, data.dates.left, data.dates.right) * minobs
+    end
+    if !isdefined(rr, :coef)
+        return missing
+    end
+    f = rr.formula
+    select!(data, internal_termvars(f))
+    #data = dropmissing(data)
+    if length(data) < minobs || length(data) <= length(names(data))
+        return missing
+    end
+    # since the values in a continuous term of mean/var/min/max are not used here,
+    # this just creates a schema from the available values without
+    sch = apply_schema(
+        f,
+        StatsModels.Schema(
+            Dict(
+                term.(StatsModels.termvars(f)) .=> ContinuousTerm.(StatsModels.termvars(f), 0.0, 0.0, 0.0, 0.0))
+            ),
+    )
+    resp, pred = modelcols(sch, data)
+    fun(resp, predict(rr, pred))
+end
+
+function vec_internal(
+    data::TimelineTable{false},
+    cache::RegressionCache,
+    rr,
+    sch,
+    fun;
+    minobs
+)
+    minobs = minobs < 1 ? bdayscount(data.calendar, data.dates.left, data.dates.right) * minobs : minobs
+    if length(data) < minobs || length(data) <= length(names(data))
+        return missing
+    end
+    resp = modelcols(sch.lhs, data)
+    pred = cache[data.dates, data.missing_bdays]
+    fun(resp, predict(rr, pred))
+end
+
+function vector_pred_diff(
+    parent_data::MarketData{T},
+    ids::AbstractVector{T},
+    date_mins::AbstractVector{Date},
+    date_maxs::AbstractVector{Date},
+    rrs::AbstractVector{BasicReg{L, R}},
+    fun;
+    minobs=0.8
+) where {T, L, R}
+    f = rrs[1].formula
+    cols = internal_termvars(f)
+    sch = apply_schema(
+        f,
+        StatsModels.Schema(
+            Dict(
+                term.(StatsModels.termvars(f)) .=> ContinuousTerm.(StatsModels.termvars(f), 0.0, 0.0, 0.0, 0.0))
+            ),
+    )
+    cache = create_pred_matrix(parent_data, sch)
+    out = Vector{Union{Missing, Float64}}(missing, length(ids))
+    Threads.@threads for i in 1:length(ids)
+        isdefined(rrs[i], :coef) || continue
+        data = parent_data[ids[i], date_mins[i] .. date_maxs[i], cols]
+        out[i] = vec_internal(data, cache, rrs[i], sch, fun; minobs)
+    end
+    if any(ismissing.(out))
+        out
+    else
+        disallowmissing(out)
+    end
+end
+
+
 
 """
     bhar(id::Int, date_start::Date, date_end::Date, cols_market::String="vwretd", col_firm::String="ret")
@@ -70,58 +178,30 @@ function bhar(
     data::TimelineTable,
     firm_col,
     mkt_col;
-    minobs::Real=0.8
+    minobs=0.8
 )
-    if minobs < 1
-        minobs = bdayscount(data.calendar, data.dates.left, data.dates.right) * minobs
-    end
-    select!(data, [firm_col, mkt_col])
-    bh_return(data, firm_col; minobs) - bh_return(data, mkt_col; minobs)
+    simple_diff(data, firm_col, mkt_col, bh_return; minobs)
 end
 
 function bhar(
     data::TimelineTable{false},
     rr::RegressionModel;
-    minobs::Real=0.8
+    minobs=0.8
 )
-    if minobs < 1
-        minobs = bdayscount(data.calendar, data.dates.left, data.dates.right) * minobs
-    end
-    if !isdefined(rr, :coef)
-        return missing
-    end
-    f = rr.formula
-    select!(data, internal_termvars(rr.formula))
-    #data = dropmissing(data)
-    if length(data) < minobs || length(data) <= length(names(data))
-        return missing
-    end
-    # since the values in a continuous term of mean/var/min/max are not used here,
-    # this just creates a schema from the available values without
-    sch = apply_schema(
-        f,
-        StatsModels.Schema(
-            Dict(
-                term.(StatsModels.termvars(f)) .=> ContinuousTerm.(StatsModels.termvars(f), 0.0, 0.0, 0.0, 0.0))
-            ),
-    )
-    resp, pred = modelcols(sch, data)
-    
-    bhar(resp, predict(rr, pred))
-
+    pred_diff(data, rr, bhar; minobs)
 end
 
-function sum_return(data::TimelineTable, col; minobs=0.8)
-    if minobs < 1
-        minobs = bdayscount(data.calendar, data.dates.left, data.dates.right) * minobs
-    end
-    t = data[:, col]
-    if length(t) < minobs
-        missing
-    else
-        sum(data[:, col])
-    end
+function bhar(
+    parent_data::MarketData{T},
+    ids::AbstractVector{T},
+    date_mins::AbstractVector{Date},
+    date_maxs::AbstractVector{Date},
+    rrs::AbstractVector{<:BasicReg};
+    minobs=0.8
+) where {T}
+    vector_pred_diff(parent_data, ids, date_mins, date_maxs, rrs, bhar; minobs)
 end
+
 """
     car(id::Int, date_start::Date, date_end::Date, cols_market::String="vwretd", col_firm::String="ret")
     car(id::Int, date_start::Date, date_end::Date, rr::Union{Missing, RegressionModel})
@@ -139,48 +219,33 @@ function car(
     data::TimelineTable,
     firm_col,
     mkt_col;
-    minobs::Real=0.8
+    minobs=0.8
 )
-    if minobs < 1
-        minobs = bdayscount(data.calendar, data.dates.left, data.dates.right) * minobs
-    end
-    select!(data, [firm_col, mkt_col])
-
-    sum_return(data, firm_col; minobs) - sum_return(data, mkt_col)
+    simple_diff(data, firm_col, mkt_col, sum_return; minobs)
 end
 
 function car(
     data::TimelineTable{false},
     rr::RegressionModel;
-    minobs::Real=.8
+    minobs=0.8
 )
-    if minobs < 1
-        minobs = bdayscount(data.calendar, data.dates.left, data.dates.right) * minobs
-    end
-    if !isdefined(rr, :coef)
-        return missing
-    end
-    f = rr.formula
-    select!(data, internal_termvars(rr.formula))
+    pred_diff(data, rr, car; minobs)
+end
 
-    if length(data) < minobs || length(data) <= length(names(data))
-        return missing
-    end
-    # since the values in a continuous term of mean/var/min/max are not used here,
-    # this just creates a schema from the available values without
-    sch = apply_schema(
-        f,
-        StatsModels.Schema(
-            Dict(
-                term.(StatsModels.termvars(f)) .=> ContinuousTerm.(StatsModels.termvars(f), 0.0, 0.0, 0.0, 0.0))
-            ),
-    )
-    resp, pred = modelcols(sch, data)
-    sum(resp) - sum(predict(rr, pred))
+function car(
+    parent_data::MarketData{T},
+    ids::AbstractVector{T},
+    date_mins::AbstractVector{Date},
+    date_maxs::AbstractVector{Date},
+    rrs::AbstractVector{<:BasicReg};
+    minobs=0.8
+) where {T}
+    vector_pred_diff(parent_data, ids, date_mins, date_maxs, rrs, car; minobs)
 end
 
 
 function get_coefficient_val(rr::RegressionModel, coefname::String...)
+    ismissing(coefnames(rr)) && return missing
     for x in coefname
         if x ∈ coefnames(rr)
             return coef(rr)[findfirst(x .== coefnames(rr))]

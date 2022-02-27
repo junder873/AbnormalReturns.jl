@@ -49,14 +49,14 @@ StatsModels.modelcols(t::InterceptTerm{false}, d::TimelineTable) = Matrix{Float6
 
 function StatsModels.modelcols(terms::MatrixTerm, data::TimelineTable)
     # I did build another getindex function for this, but I need to combine the missing days from the new dataset
-    if data.regression_cache !== nothing && terms == data.regression_cache.terms
-        r = date_range(data.calendar, data.regression_cache.dates, data.dates)
-        if data.missing_bdays !== nothing
-            r = r[Not(data.missing_bdays)]
-        end
+    # if data.regression_cache !== nothing && terms == data.regression_cache.terms
+    #     r = date_range(data.calendar, data.regression_cache.dates, data.dates)
+    #     if data.missing_bdays !== nothing
+    #         r = r[Not(data.missing_bdays)]
+    #     end
 
-        return data.regression_cache.data[r, :]
-    end
+    #     return data.regression_cache.data[r, :]
+    # end
     reduce(hcat, [modelcols(tt, data) for tt in terms.terms])
     
     #modelcols.(terms, Ref(data))

@@ -66,3 +66,7 @@ function BusinessDays.listbdays(hc::MarketCalendar, dt0::Date, dt1::Date)
     BusinessDays.checkbounds(hc, dt1)
     hc.bdays[dt0 .<= hc.bdays .<= dt1]
 end
+
+function Base.show(io::IO, cal::MarketCalendar)
+    print(io, "MarketCalendar: $(cal.dtmin) .. $(cal.dtmax) with $(sum(cal.isbday_array)) business days")
+end

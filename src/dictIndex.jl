@@ -14,6 +14,7 @@ end
 DictIndex(cols::Vector{Symbol}) = DictIndex(cols, zeros(Int, length(cols)))
 
 TimelineColumn(x::TimelineColumn) = x
+TimelineColumn(x, s=0) = TimelineColumn(Symbol(x), Int(s))
 
 function DictIndex(cols::Vector{Symbol}, shifts::Vector{Int})
     DictIndex(TimelineColumn.(cols, shifts))

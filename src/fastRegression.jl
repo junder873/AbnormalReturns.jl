@@ -17,6 +17,20 @@ struct BasicReg{L,R} <: RegressionModel
     BasicReg(x::Int, f::FormulaTerm{L,R}) where {L, R} = new{L,R}(x, f)
 end
 
+function create_pred_matrix(data::MarketData, sch)
+    # This allows missing to make sure all dates are in the data
+    # it is not necessary to include missing bdays since the
+    # timelinetable already has the same information
+    temp_data = allowmissing(data[:, internal_termvars(sch.rhs)])
+    mat = modelcols(sch.rhs, temp_data)
+    mat = coalesce.(mat, 0.0)
+    RegressionCache(
+            mat,
+            temp_data.dates,
+            data.calendar
+        )
+end
+
 function create_pred_matrix(data::TimelineTable{false}, sch)
     if data.regression_cache === nothing || data.regression_cache.terms != sch.rhs
         temp_data = data.parent[:, internal_termvars(sch.rhs)]
@@ -35,9 +49,8 @@ end
 function quick_reg(
     data::TimelineTable{false},
     f::FormulaTerm;
-    minobs::Real=0.8,
-    save_residuals::Bool=false,
-    save_prediction_matrix::Bool=true
+    minobs=0.8,
+    save_residuals::Bool=false
 )
 
     if minobs < 1
@@ -65,17 +78,9 @@ function quick_reg(
             ),
     )
 
-    if save_prediction_matrix
-        create_pred_matrix(data, sch)
-    end
-
     resp, pred = modelcols(sch, data)
     #resp = modelcols(sch.lhs, data)
     #pred = modelcols(sch.rhs, data; save_matrix=save_prediction_matrix)
-
-    if length(resp) < minobs
-        return BasicReg(0, f)
-    end
 
     coef = cholesky!(Symmetric(pred' * pred)) \ (pred' * resp)
     resid = resp .- pred * coef
@@ -103,7 +108,82 @@ function StatsBase.fit(
     quick_reg(data, formula)
 end
 
+function BasicReg(
+    data::TimelineTable,
+    cache::RegressionCache,
+    sch,
+    f;
+    minobs=0.8,
+    save_residuals
+)
 
+    if minobs < 1
+        minobs = bdayscount(data.calendar, data.dates.left, data.dates.right) * minobs
+    end
+    if length(data) < minobs
+        return BasicReg(length(data), f)
+    end
+    resp = modelcols(sch.lhs, data)
+    pred = cache[data.dates, data.missing_bdays]
+
+    if length(resp) <= size(pred, 2)
+        return BasicReg(length(resp), f)
+    end
+
+    coef = cholesky!(Symmetric(pred' * pred)) \ (pred' * resp)
+    resid = resp .- pred * coef
+    rss = sum(abs2, resid)
+    tss = sum(abs2, (resp .- mean(resp)))
+    yname, xnames = coefnames(sch)
+
+    BasicReg(
+        length(resp),
+        f,
+        coef,
+        xnames,
+        yname,
+        tss,
+        rss,
+        save_residuals ? resid : nothing
+    )
+
+end
+
+function vector_reg(
+    parent_data::MarketData{T},
+    ids::AbstractVector{T},
+    date_mins::AbstractVector{Date},
+    date_maxs::AbstractVector{Date},
+    f::FormulaTerm;
+    minobs=0.8,
+    save_residuals::Bool=false
+) where {T}
+    if !StatsModels.omitsintercept(f) & !StatsModels.hasintercept(f)
+        f = FormulaTerm(f.lhs, InterceptTerm{true}() + f.rhs)
+    end
+    cols = internal_termvars(f)
+    sch = apply_schema(
+        f,
+        StatsModels.Schema(
+            Dict(
+                term.(StatsModels.termvars(f)) .=> ContinuousTerm.(StatsModels.termvars(f), 0.0, 0.0, 0.0, 0.0))
+            ),
+    )
+    cache = create_pred_matrix(parent_data, sch)
+    out = fill(BasicReg(0, f), length(ids))
+    Threads.@threads for i in 1:length(ids)
+        data = parent_data[ids[i], date_mins[i] .. date_maxs[i], cols]
+        out[i] = BasicReg(
+            data,
+            cache,
+            sch,
+            f;
+            minobs,
+            save_residuals
+        )
+    end
+    out
+end
 
 
 """
@@ -114,7 +194,7 @@ end
         est_max::Date;
         cols_market::Union{Nothing, Vector{String}}=nothing,
         col_firm::String="ret",
-        minobs::Real=.8,
+        minobs=.8,
         calendar="CrspMarketCalendar"
     )
 
@@ -135,7 +215,7 @@ of dates. Designed to quickly estimate Fama French predicted returns.
     the intercept
 - `col_firm::String="ret"`: The column for the firm vector, typically this is the return, it must be
     in the FIRM_DATA_CACHE data
-- `minobs::Real=.8`: Minimum number of observations to run the regression, if the number provided
+- `minobs=.8`: Minimum number of observations to run the regression, if the number provided
     is less than 1, then it is assumed to be a ratio (i.e., minimum observations is number of
     businessdays times minobs)
 - `calendar="CrspMarketCalendar"`: calendar to use if minobs is less than 1, should be initialized cache if
@@ -146,15 +226,15 @@ of dates. Designed to quickly estimate Fama French predicted returns.
 StatsBase.predict(mod::BasicReg, x) = x * coef(mod)
 
 StatsBase.coef(x::BasicReg) = isdefined(x, :coef) ? x.coef : missing
-StatsBase.coefnames(x::BasicReg) = isdefined(x, :coefnames) ? x.coefnames : missing
-StatsBase.responsename(x::BasicReg) = isdefined(x, :yname) ? x.yname : missing
+StatsBase.coefnames(x::BasicReg) = isdefined(x, :coef) ? x.coefnames : missing
+StatsBase.responsename(x::BasicReg) = isdefined(x, :coef) ? x.yname : missing
 StatsBase.nobs(x::BasicReg) = x.nobs
 StatsBase.dof_residual(x::BasicReg) = isdefined(x, :coef) ? nobs(x) - length(coef(x)) : missing
 StatsBase.r2(x::BasicReg) = 1 - (rss(x) / deviance(x))
 StatsBase.adjr2(x::BasicReg) = 1 - rss(x) / deviance(x) * (nobs(x) - 1) / dof_residual(x)
 StatsBase.islinear(x::BasicReg) = true
-StatsBase.deviance(x::BasicReg) = isdefined(x, :tss) ? x.tss : missing
-StatsBase.rss(x::BasicReg) = isdefined(x, :rss) ? x.rss : missing
+StatsBase.deviance(x::BasicReg) = isdefined(x, :coef) ? x.tss : missing
+StatsBase.rss(x::BasicReg) = isdefined(x, :coef) ? x.rss : missing
 function StatsBase.residuals(x::BasicReg)
     if x.residuals === nothing
         @error("To access residuals, run `cache_reg` with the option `save_residuals=true`")
@@ -194,3 +274,28 @@ function StatsBase.predict(rr::RegressionModel, data::TimelineTable{false})
     predict(rr, pred)
 end
 
+function rhs_str(nms, vals; intercept = "(Intercept)")
+    out = String[]
+    for (nm, val) in zip(nms, vals)
+        val_str = string(round(val, digits=3))
+        if nm == intercept
+            push!(out, val_str)
+        else
+            push!(out, val_str * "*" * nm)
+        end
+    end
+    join(out, " + ")
+end
+
+function Base.show(io::IO, rr::BasicReg)
+    if !isdefined(rr, :coef)
+        println(io, "Obs: $(nobs(rr)), $(rr.formula)")
+    else
+        println(io, "Obs: $(nobs(rr)), $(responsename(rr)) ~ $(rhs_str(coefnames(rr), coef(rr))), AdjR2: ", round(adjr2(rr) * 100, digits=3), "%")
+        # mat = hcat(
+        #     coefnames(rr),
+        #     string.(round.(coef(rr), digits=3))
+        # )
+        # PrettyTables.pretty_table(io, mat)
+    end
+end

@@ -70,13 +70,7 @@ function quick_reg(
     # but doing that repeatedly is quite slow and, in this case, does not
     # provide any extra use since all of the columns are already known to be continuous
     # and the other values (mean, var, min, max) are not used later
-    sch = apply_schema(
-        f,
-        StatsModels.Schema(
-            Dict(
-                term.(StatsModels.termvars(f)) .=> ContinuousTerm.(StatsModels.termvars(f), 0.0, 0.0, 0.0, 0.0))
-            ),
-    )
+    sch = apply_schema(f, schema(f, data))
 
     resp, pred = modelcols(sch, data)
     #resp = modelcols(sch.lhs, data)
@@ -162,13 +156,7 @@ function vector_reg(
         f = FormulaTerm(f.lhs, InterceptTerm{true}() + f.rhs)
     end
     cols = internal_termvars(f)
-    sch = apply_schema(
-        f,
-        StatsModels.Schema(
-            Dict(
-                term.(StatsModels.termvars(f)) .=> ContinuousTerm.(StatsModels.termvars(f), 0.0, 0.0, 0.0, 0.0))
-            ),
-    )
+    sch = apply_schema(f, schema(f, parent_data))
     cache = create_pred_matrix(parent_data, sch)
     out = fill(BasicReg(0, f), length(ids))
     Threads.@threads for i in 1:length(ids)
@@ -262,13 +250,7 @@ function StatsBase.predict(rr::RegressionModel, data::TimelineTable{false})
     # but doing that repeatedly is quite slow and, in this case, does not
     # provide any extra use since all of the columns are already known to be continuous
     # and the other values (mean, var, min, max) are not used later
-    sch = apply_schema(
-        f,
-        StatsModels.Schema(
-            Dict(
-                term.(StatsModels.termvars(f)) .=> ContinuousTerm.(StatsModels.termvars(f), 0.0, 0.0, 0.0, 0.0))
-            ),
-    )
+    sch = apply_schema(f, schema(f, data))
 
     pred = modelcols(sch.rhs, data)
     predict(rr, pred)

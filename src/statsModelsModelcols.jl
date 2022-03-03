@@ -108,3 +108,15 @@ function internal_termvars(t::StatsModels.LeadLagTerm{T, F}) where {T, F<:Union{
 end
 
 StatsModels.term(x::TimelineColumn) = StatsModels.term(x.name)
+
+function StatsModels.schema(f::FormulaTerm, d::TimelineTable)
+    schema(f, d.parent)
+end
+
+function StatsModels.schema(f::FormulaTerm, d::MarketData)
+    StatsModels.Schema(
+        Dict(
+            term.(StatsModels.termvars(f)) .=> ContinuousTerm.(StatsModels.termvars(f), 0.0, 0.0, 0.0, 0.0)
+        )
+    )
+end

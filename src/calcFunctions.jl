@@ -102,13 +102,7 @@ function pred_diff(
     end
     # since the values in a continuous term of mean/var/min/max are not used here,
     # this just creates a schema from the available values without
-    sch = apply_schema(
-        f,
-        StatsModels.Schema(
-            Dict(
-                term.(StatsModels.termvars(f)) .=> ContinuousTerm.(StatsModels.termvars(f), 0.0, 0.0, 0.0, 0.0))
-            ),
-    )
+    sch = apply_schema(f, schema(f, data))
     resp, pred = modelcols(sch, data)
     fun(resp, predict(rr, pred))
 end
@@ -141,13 +135,7 @@ function vector_pred_diff(
 ) where {T, L, R}
     f = rrs[1].formula
     cols = internal_termvars(f)
-    sch = apply_schema(
-        f,
-        StatsModels.Schema(
-            Dict(
-                term.(StatsModels.termvars(f)) .=> ContinuousTerm.(StatsModels.termvars(f), 0.0, 0.0, 0.0, 0.0))
-            ),
-    )
+    sch = apply_schema(f, schema(f, parent_data))
     cache = create_pred_matrix(parent_data, sch)
     out = Vector{Union{Missing, Float64}}(missing, length(ids))
     Threads.@threads for i in 1:length(ids)

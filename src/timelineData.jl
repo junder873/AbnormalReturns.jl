@@ -140,7 +140,7 @@ function DataVector(data::AbstractVector, dates::AbstractVector{Date})
         j = findlast(!ismissing, data)
         data = data[i:j]
         dates = dates[i:j]
-        missing_days = Set(findall(ismissing, data))
+        missing_days = any(ismissing.(data)) ? Set(findall(ismissing, data)) : nothing
         data = coalesce.(data, zero(nonmissingtype(eltype(data))))
     else
         missing_days = nothing
@@ -226,8 +226,12 @@ end
 
 function Base.getindex(data::RegressionCache, dates::ClosedInterval{Date}, mssngs::Vector{Int})
     new_dates = dates_min_max(data.dates, dates)
+    new_mssngs = adjust_missing_bdays(data.calendar, mssngs, dates, new_dates)
+    if new_mssngs === nothing
+        return data[dates, nothing]
+    end
     r = date_range(data.calendar, data.dates, new_dates)
-    data.data[r[Not(mssngs)], :]
+    data.data[r[Not(new_mssngs)], :]
 end
 
 function combine_missing_bdays(vals::Union{Nothing, Set{Int}}...)
@@ -512,8 +516,7 @@ function calculate_missing_bdays!(obj::TimelineTable)
     end
     if obj.dates.right > col_dates.right # set last available date:end as missing
         r = Set(
-            1:bdayscount(obj.calendar, col_dates.right, obj.dates.right) .+
-            bdayscount(obj.calendar, obj.dates.left, col_dates.right)
+            bdayscount(obj.calendar, obj.dates.left, col_dates.right) + 2:bdayscount(obj.calendar, obj.dates.left, obj.dates.right)+isbday(obj.calendar, obj.dates.right)
         )
         union!(out, r)
     end

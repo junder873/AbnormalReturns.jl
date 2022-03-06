@@ -48,10 +48,10 @@ end
 
 function quick_reg(
     data::TimelineTable{false},
-    f::FormulaTerm;
+    f::FormulaTerm{L,R};
     minobs=0.8,
     save_residuals::Bool=false
-)
+)::BasicReg{L,R} where {L,R}
 
     if minobs < 1
         minobs = bdayscount(data.calendar, data.dates.left, data.dates.right) * minobs
@@ -106,10 +106,10 @@ function BasicReg(
     data::TimelineTable,
     cache::RegressionCache,
     sch,
-    f;
+    f::FormulaTerm{L,R};
     minobs=0.8,
     save_residuals
-)
+)::BasicReg{L,R} where {L,R}
 
     if minobs < 1
         minobs = bdayscount(data.calendar, data.dates.left, data.dates.right) * minobs
@@ -148,10 +148,10 @@ function vector_reg(
     ids::AbstractVector{T},
     date_mins::AbstractVector{Date},
     date_maxs::AbstractVector{Date},
-    f::FormulaTerm;
+    f::FormulaTerm{L,R};
     minobs=0.8,
     save_residuals::Bool=false
-) where {T}
+) where {T,L,R}
     if !StatsModels.omitsintercept(f) & !StatsModels.hasintercept(f)
         f = FormulaTerm(f.lhs, InterceptTerm{true}() + f.rhs)
     end

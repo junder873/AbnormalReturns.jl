@@ -202,7 +202,11 @@ function date_range(cal::MarketCalendar, timeline_dates::ClosedInterval{Date}, n
 end
 
 function date_range(cal::MarketCalendar, data::DataVector, dt_min::Date, dt_max::Date)
-    data_range(cal, data.dates, dt_min .. dt_max)
+    date_range(cal, data.dates, dt_min .. dt_max)
+end
+
+function date_range(cal::MarketCalendar, data::DataVector, dates::ClosedInterval{Date})
+    date_range(cal, data.dates, dates)
 end
 
 # function Base.getindex(data::RegressionData, dates::ClosedInterval{Date})
@@ -215,7 +219,7 @@ end
 function Base.getindex(data::RegressionCache, dates::ClosedInterval{Date}, mssngs::Nothing)
     new_dates = dates_min_max(data.dates, dates)
     r = date_range(data.calendar, data.dates, new_dates)
-    data.data[r, :]
+    @view data.data[r, :]
     # new_missings = adjust_missing_bdays(data.calendar, data.dates, new_dates)
     # if new_missings === nothing
     #     data.data[r, :]
@@ -299,7 +303,7 @@ end
     ) where {T}
     data[id, dates, TimelineColumn.(cols)]
 end
-@inline function Base.getindex(
+@inline @views function Base.getindex(
     data::MarketData{T, MNames, FNames},
     id::T,
     dates::ClosedInterval{Date},
@@ -455,14 +459,13 @@ end
 function Base.getindex(obj::TimelineTable{false}, ::Colon, nm::Symbol)::Vector{Float64}
     obj[:, TimelineColumn(nm)]
 end
-function Base.getindex(obj::TimelineTable{false}, ::Colon, nm::TimelineColumn)::Vector{Float64}
+@inline @views function Base.getindex(obj::TimelineTable{false}, ::Colon, nm::TimelineColumn)::Vector{Float64}
     dates = dates_min_max(obj.dates, [obj[col].dates for col in names(obj)]...)
 
     vec = obj[nm]
     local_dates = dates_min_max(dates, vec.dates)
-    s = bdayscount(obj.calendar, vec.dates.left, local_dates.left) + 1
-    e = s + bdayscount(obj.calendar, local_dates.left, local_dates.right) - !isbday(obj.calendar, local_dates.right)
-    out = raw_values(vec)[s:e]
+    r = date_range(obj.calendar, vec, local_dates)
+    out = vec.data[r]
     if obj.missing_bdays !== nothing && length(obj.missing_bdays) == 0
         calculate_missing_bdays!(obj)
     end

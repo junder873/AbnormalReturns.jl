@@ -1,7 +1,11 @@
 [deps]
 AbnormalReturns = "f9c80461-2ebf-4c7c-9c1c-d30d9d100fd8"
 Arrow = "69666777-d1a9-59fb-9406-91d4454c9d45"
+BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
+BusinessDays = "4f18b42c-503e-5345-9536-bb0f25fc7038"
 CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 DataFramesMeta = "1313f7d8-7da2-5740-9ea0-a2ca25f37964"
+Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
+Parsers = "69de0a69-1ddd-5017-9359-2bf0b02dc9f0"
 Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"

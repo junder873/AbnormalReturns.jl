@@ -51,8 +51,8 @@ function get_all_items(parent_data::MarketData{T}, ids::Vector{T}, date_starts::
     out = zeros(length(ids))
     for i in 1:length(ids)
         update_timeline_table(data, ids[i], date_starts[i] .. date_ends[i])
-        # x = data[:, :ret]
-        # out[i] = sum(x)
+        x = data[:, :ret]
+        out[i] = sum(x)
     end
     out
 end
@@ -67,8 +67,8 @@ function get_all_items2(parent_data::MarketData{T}, ids::Vector{T}, date_starts:
     out = zeros(length(ids))
     for i in 1:length(ids)
         data = parent_data[ids[i], date_starts[i] .. date_ends[i], [:ret]]
-        # x = data[:, :ret]
-        # out[i] = sum(x)
+        x = data[:, :ret]
+        out[i] = sum(x)
     end
     out
 end

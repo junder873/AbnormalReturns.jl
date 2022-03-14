@@ -25,7 +25,7 @@ struct AllowMissing{mssng} end
 mutable struct TimelineTable{Mssng, T, MNames, FNames, N1, N2} <: Tables.AbstractColumns
     parent::MarketData{T, MNames, FNames, N1, N2}
     allow_missing::Type{AllowMissing{Mssng}}
-    firmdata::Union{Nothing, NamedTuple{FNames, NTuple{N2, DataVector}}}
+    firm_id::Union{Nothing, T}
     dates::ClosedInterval{Date}
     cols::DictIndex
     missing_bdays::Union{Nothing, Vector{Int}}# nothing if no missing bdays, empty vector if never calculated
@@ -319,7 +319,7 @@ end
     return TimelineTable(
         data,
         AllowMissing{false},
-        data.firmdata[id],
+        id,
         dates,
         DictIndex(cols),
         Int[],
@@ -338,12 +338,11 @@ end
         throw(ArgumentError("Not all columns are in the data"))
     end
 
-    firmdata = data.firmdata[id]
     dates = dates_min_max(data_dates.([data[id, col] for col in cols]))
     TimelineTable(
         data,
         AllowMissing{false},
-        firmdata,
+        id,
         dates,
         DictIndex(cols),
         Int[],
@@ -416,17 +415,19 @@ end
 
 function Base.getproperty(obj::TimelineTable{Mssngs, T, MNames, FNames}, sym::Symbol) where {Mssngs, T, MNames, FNames}
     if sym == :calendar
-        obj.parent.calendar
+        getfield(getfield(obj, :parent), :calendar)
     elseif sym == :marketdata
-        obj.parent.marketdata
+        getfield(getfield(obj, :parent), :marketdata)
+    elseif sym == :firmdata
+        getfield(getfield(obj, :parent), :firmdata)[getfield(obj, :firm_id)]
     elseif sym == :regression_cache
-        obj.parent.regression_cache
+        getfield(getfield(obj, :parent), :regression_cache)
     elseif sym == :date
         get_dates(obj)
     elseif sym ∈ MNames
-        getproperty(obj.parent.marketdata, sym)
+        getfield(getfield(getfield(obj, :parent), :marketdata), sym)
     elseif sym ∈ FNames
-        getproperty(obj.firmdata, sym)
+        getfield(getfield(obj, :firmdata), sym)
     else
         getfield(obj, sym)
     end

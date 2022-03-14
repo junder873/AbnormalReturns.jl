@@ -8,53 +8,132 @@ struct BasicReg{L,R} <: RegressionModel
     rss::Float64
     residuals::Union{Vector{Float64}, Nothing}
     function BasicReg(nobs, formula::FormulaTerm{L,R}, coef, coefnames, yname, tss, rss, residuals) where {L,R}
-        @assert rss >= 0 "Residual sum of squares must be greater than 0"
-        @assert tss >= 0 "Total sum of squares must be greater than 0"
-        @assert nobs >= 0 "Observations must be greater than 0"
-        @assert length(coef) == length(coefnames) "Number of coefficients must be same as number of coefficient names"
+        # @assert rss >= 0 "Residual sum of squares must be greater than 0"
+        # @assert tss >= 0 "Total sum of squares must be greater than 0"
+        # @assert nobs >= 0 "Observations must be greater than 0"
+        # @assert length(coef) == length(coefnames) "Number of coefficients must be same as number of coefficient names"
         new{L,R}(nobs, formula, coef, coefnames, yname, tss, rss, residuals)
     end
     BasicReg(x::Int, f::FormulaTerm{L,R}) where {L, R} = new{L,R}(x, f)
 end
 
-function create_pred_matrix(data::MarketData, sch)
+function BasicReg(
+    resp::AbstractVector{Float64},
+    pred::AbstractMatrix{Float64},
+    yname::String,
+    xnames::Vector{String},
+    f::FormulaTerm{L,R};
+    save_residuals=false
+)::BasicReg{L,R} where {L,R}
+    if length(resp) <= size(pred, 2)
+        return BasicReg(length(resp), f)
+    end
+    # display(pred)
+    # display(resp)
+
+    coef = cholesky!(Symmetric(pred' * pred)) \ (pred' * resp)
+    resid = resp .- pred * coef
+    rss = sum(abs2, resid)
+    tss = sum(abs2, (resp .- mean(resp)))
+
+    BasicReg(
+        length(resp),
+        f,
+        coef,
+        xnames,
+        yname,
+        tss,
+        rss,
+        save_residuals ? resid : nothing
+    )
+end
+
+function BasicReg(
+    data::TimelineTable,
+    cache::RegressionCache,
+    sch::FormulaTerm{L2,R2},
+    f::FormulaTerm{L,R};
+    minobs::V=0.8,
+    save_residuals::Bool=false
+)::BasicReg{L,R} where {L,R,L2,R2,V<:Real}
+
+    if minobs < 1
+        minobs = bdayscount(data.calendar, dt_min(data), dt_max(data)) * minobs
+    end
+    if length(data) < minobs
+        return BasicReg(length(data), f)
+    end
+    resp = modelcols(int_lhs(sch), data)
+    # resp = view(data[sch.lhs.sym], data.dates)
+    # pred = view(cache, data.dates)
+    pred = cache[data.dates, data.missing_bdays]
+    # BasicReg(
+    #     resp,
+    #     pred,
+    #     sch,
+    #     f;
+    #     save_residuals
+    # )
+    yname, xnames = coefnames(sch)
+    BasicReg(
+        resp,
+        pred,
+        yname,
+        xnames,
+        f;
+        save_residuals
+    )
+end
+
+function BasicReg(
+    data::TimelineTable,
+    sch::FormulaTerm{L2,R2},
+    f::FormulaTerm{L,R};
+    minobs::V=0.8,
+    save_residuals::Bool=false
+)::BasicReg{L,R,L2,R2} where {L,R,L2,R2,V<:Real}
+    if minobs < 1
+        minobs = bdayscount(data.calendar, dt_min(data), dt_max(data)) * minobs
+    end
+    if length(data) < minobs
+        return BasicReg(length(data), f)
+    end
+    resp, pred = modelcols(sch, data)
+    BasicReg(
+        resp,
+        pred,
+        sch,
+        f;
+        save_residuals
+    )
+end
+
+function create_pred_matrix(data::TimelineTable, sch)
     # This allows missing to make sure all dates are in the data
     # it is not necessary to include missing bdays since the
     # timelinetable already has the same information
-    temp_data = allowmissing(data[:, internal_termvars(sch.rhs)])
-    mat = modelcols(sch.rhs, temp_data)
-    mat = coalesce.(mat, 0.0)
+
+    #temp_data = allowmissing(data[:, internal_termvars(sch.rhs)])
+    mat = modelcols(sch.rhs, data)
+    #mat = coalesce.(mat, 0.0)
+    #update_request!(data, cols=old_cols, dates=old_dates)
     RegressionCache(
             mat,
-            temp_data.dates,
+            data.dates,
             data.calendar
         )
-end
-
-function create_pred_matrix(data::TimelineTable{false}, sch)
-    if data.regression_cache === nothing || data.regression_cache.terms != sch.rhs
-        temp_data = data.parent[:, internal_termvars(sch.rhs)]
-        mat = modelcols(sch.rhs, temp_data)
-        data.parent.regression_cache = RegressionCache(
-            sch.rhs,
-            mat,
-            temp_data.dates,
-            nothing,
-            data.calendar
-        )
-    end
 end
 
 
 function quick_reg(
-    data::TimelineTable{false},
+    data::TimelineTable,
     f::FormulaTerm{L,R};
-    minobs=0.8,
+    minobs::V=0.8,
     save_residuals::Bool=false
-)::BasicReg{L,R} where {L,R}
+) where {L,R,V<:Real}
 
     if minobs < 1
-        minobs = bdayscount(data.calendar, data.dates.left, data.dates.right) * minobs
+        minobs = bdayscount(data.calendar, dt_min(data), dt_max(data)) * minobs
     end
 
     if !StatsModels.omitsintercept(f) & !StatsModels.hasintercept(f)
@@ -71,76 +150,58 @@ function quick_reg(
     # provide any extra use since all of the columns are already known to be continuous
     # and the other values (mean, var, min, max) are not used later
     sch = apply_schema(f, schema(f, data))
-
     resp, pred = modelcols(sch, data)
-    #resp = modelcols(sch.lhs, data)
-    #pred = modelcols(sch.rhs, data; save_matrix=save_prediction_matrix)
-
-    coef = cholesky!(Symmetric(pred' * pred)) \ (pred' * resp)
-    resid = resp .- pred * coef
-    rss = sum(abs2, resid)
-    tss = sum(abs2, (resp .- mean(resp)))
     yname, xnames = coefnames(sch)
-
     BasicReg(
-        length(resp),
-        f,
-        coef,
-        xnames,
+        resp,
+        pred,
         yname,
-        tss,
-        rss,
-        save_residuals ? resid : nothing
+        xnames,
+        f;
+        save_residuals
     )
 end
 
-function StatsBase.fit(
-    ::Type{BasicReg},
-    formula::FormulaTerm,
-    data::TimelineTable{false}
-)
-    quick_reg(data, formula)
+function construct_id_dict(ids::Vector{T}) where {T}
+    out = Dict{T, Vector{Int}}()
+    sizehint!(out, length(ids))
+    for (i, id) in enumerate(ids)
+        if !haskey(out, id)
+            out[id] = Int[]
+        end
+        push!(out[id], i)
+    end
+    out
 end
 
-function BasicReg(
-    data::TimelineTable,
+function fill_vector_reg(
+    parent_data::MarketData{T},
+    date_mins::AbstractVector{Date},
+    date_maxs::AbstractVector{Date},
+    out_vector::Vector{BasicReg{L,R}},
     cache::RegressionCache,
-    sch,
+    sch::FormulaTerm{L2,R2},
+    all_ids::Dict{T, Vector{Int}},
+    cols::Vector{TimelineColumn},
     f::FormulaTerm{L,R};
-    minobs=0.8,
-    save_residuals
-)::BasicReg{L,R} where {L,R}
-
-    if minobs < 1
-        minobs = bdayscount(data.calendar, data.dates.left, data.dates.right) * minobs
+    minobs::V=0.8,
+    save_residuals::Bool=false
+) where {T, L, R, L2, R2, V<:Real}
+    for u_id in collect(keys(all_ids))
+        local_data = parent_data[u_id, cols]
+        @inbounds for i in all_ids[u_id]
+            update_dates!(local_data, date_mins[i] .. date_maxs[i])
+            out_vector[i] = BasicReg(
+                local_data,
+                cache,
+                sch,
+                f;
+                minobs,
+                save_residuals
+            )
+        end
     end
-    if length(data) < minobs
-        return BasicReg(length(data), f)
-    end
-    resp = modelcols(sch.lhs, data)
-    pred = cache[data.dates, data.missing_bdays]
-
-    if length(resp) <= size(pred, 2)
-        return BasicReg(length(resp), f)
-    end
-
-    coef = cholesky!(Symmetric(pred' * pred)) \ (pred' * resp)
-    resid = resp .- pred * coef
-    rss = sum(abs2, resid)
-    tss = sum(abs2, (resp .- mean(resp)))
-    yname, xnames = coefnames(sch)
-
-    BasicReg(
-        length(resp),
-        f,
-        coef,
-        xnames,
-        yname,
-        tss,
-        rss,
-        save_residuals ? resid : nothing
-    )
-
+    out_vector
 end
 
 function vector_reg(
@@ -149,28 +210,30 @@ function vector_reg(
     date_mins::AbstractVector{Date},
     date_maxs::AbstractVector{Date},
     f::FormulaTerm{L,R};
-    minobs=0.8,
+    minobs::V=0.8,
     save_residuals::Bool=false
-) where {T,L,R}
+) where {T,L,R,V<:Real}
     if !StatsModels.omitsintercept(f) & !StatsModels.hasintercept(f)
         f = FormulaTerm(f.lhs, InterceptTerm{true}() + f.rhs)
     end
     cols = internal_termvars(f)
+    all_ids = construct_id_dict(ids)
     sch = apply_schema(f, schema(f, parent_data))
-    cache = create_pred_matrix(parent_data, sch)
+    cache = create_pred_matrix(parent_data[ids[1]], sch)
     out = fill(BasicReg(0, f), length(ids))
-    Threads.@threads for i in 1:length(ids)
-        data = parent_data[ids[i], date_mins[i] .. date_maxs[i], cols]
-        out[i] = BasicReg(
-            data,
-            cache,
-            sch,
-            f;
-            minobs,
-            save_residuals
-        )
-    end
-    out
+    fill_vector_reg(
+        parent_data,
+        date_mins,
+        date_maxs,
+        out,
+        cache,
+        sch,
+        all_ids,
+        cols,
+        f;
+        minobs,
+        save_residuals
+    )
 end
 
 
@@ -240,21 +303,21 @@ between the two dates provided.
 This will work with any RegressionModel provided as long as it provides methods for `coefnames`
 that correspond to names stored in the MARKET_DATA_CACHE and a `coef` method. The model should be linear.
 """
-# this might be too generalized...
-function StatsBase.predict(rr::RegressionModel, data::TimelineTable{false})
-    f = rr.formula
-    select!(data, internal_termvars(f))
+# # this might be too generalized...
+# function StatsBase.predict(rr::RegressionModel, data::TimelineTable{false})
+#     f = rr.formula
+#     select!(data, internal_termvars(f))
     
 
-    # a Schema is normally built by running schema(f, data)
-    # but doing that repeatedly is quite slow and, in this case, does not
-    # provide any extra use since all of the columns are already known to be continuous
-    # and the other values (mean, var, min, max) are not used later
-    sch = apply_schema(f, schema(f, data))
+#     # a Schema is normally built by running schema(f, data)
+#     # but doing that repeatedly is quite slow and, in this case, does not
+#     # provide any extra use since all of the columns are already known to be continuous
+#     # and the other values (mean, var, min, max) are not used later
+#     sch = apply_schema(f, schema(f, data))
 
-    pred = modelcols(sch.rhs, data)
-    predict(rr, pred)
-end
+#     pred = modelcols(sch.rhs, data)
+#     predict(rr, pred)
+# end
 
 function rhs_str(nms, vals; intercept = "(Intercept)")
     out = String[]
@@ -271,9 +334,9 @@ end
 
 function Base.show(io::IO, rr::BasicReg)
     if !isdefined(rr, :coef)
-        println(io, "Obs: $(nobs(rr)), $(rr.formula)")
+        print(io, "Obs: $(nobs(rr)), $(rr.formula)")
     else
-        println(io, "Obs: $(nobs(rr)), $(responsename(rr)) ~ $(rhs_str(coefnames(rr), coef(rr))), AdjR2: ", round(adjr2(rr) * 100, digits=3), "%")
+        print(io, "Obs: $(nobs(rr)), $(responsename(rr)) ~ $(rhs_str(coefnames(rr), coef(rr))), AdjR2: ", round(adjr2(rr) * 100, digits=3), "%")
         # mat = hcat(
         #     coefnames(rr),
         #     string.(round.(coef(rr), digits=3))

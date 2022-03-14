@@ -8,6 +8,7 @@ using Statistics
 using Dates
 using DataFrames
 using IntervalSets
+using SparseArrays
 @reexport using BusinessDays
 @reexport using StatsModels
 using ShiftedArrays

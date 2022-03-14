@@ -5,13 +5,13 @@ Statistics.std(rr::RegressionModel) = sqrt(var(rr))
 # it seems like I want some kind of formula with a similar minobs option for a lot
 # of these functions as well.
 function Statistics.var(
-    data::TimelineTable{false},
+    data::MarketData,
     col_firm,
     col_market;
     minobs=0.8
 )
     if minobs < 1
-        minobs = bdayscount(data.calendar, data.dates.left, data.dates.right) * minobs
+        minobs = bdayscount(data.calendar, dt_min(data), dt_max(data)) * minobs
     end
     select!(data, [col_firm, col_market])
     if length(data) < minobs
@@ -21,7 +21,7 @@ function Statistics.var(
 end
 
 function Statistics.std(
-    data::TimelineTable,
+    data::MarketData,
     col_firm,
     col_market;
     minobs=0.8
@@ -44,9 +44,9 @@ is calculated for the MARKET_DATA_CACHE.
 
 These functions treat missing returns in the period implicitly as a zero return.
 """
-function bh_return(data::TimelineTable, col; minobs=0.8)
+function bh_return(data::MarketData, col; minobs=0.8)
     if minobs < 1
-        minobs = bdayscount(data.calendar, data.dates.left, data.dates.right) * minobs
+        minobs = bdayscount(data.calendar, dt_min(data), dt_max(data)) * minobs
     end
     t = data[:, col]
     if length(t) < minobs
@@ -56,9 +56,9 @@ function bh_return(data::TimelineTable, col; minobs=0.8)
     end
 end
 
-function sum_return(data::TimelineTable, col; minobs=0.8)
+function sum_return(data::MarketData, col; minobs=0.8)
     if minobs < 1
-        minobs = bdayscount(data.calendar, data.dates.left, data.dates.right) * minobs
+        minobs = bdayscount(data.calendar, dt_min(data), dt_max(data)) * minobs
     end
     t = data[:, col]
     if length(t) < minobs
@@ -69,27 +69,27 @@ function sum_return(data::TimelineTable, col; minobs=0.8)
 end
 
 function simple_diff(
-    data::TimelineTable,
+    data::MarketData,
     firm_col,
     mkt_col,
     fun;
     minobs::Float64=0.8
 )
     if minobs < 1
-        minobs = bdayscount(data.calendar, data.dates.left, data.dates.right) * minobs
+        minobs = bdayscount(data.calendar, dt_min(data), dt_max(data)) * minobs
     end
     select!(data, [firm_col, mkt_col])
     fun(data, firm_col; minobs) - fun(data, mkt_col; minobs)
 end
 
 function pred_diff(
-    data::TimelineTable{false},
+    data::MarketData,
     rr::RegressionModel,
     fun;
     minobs::Float64=0.8
 )
     if minobs < 1
-        minobs = bdayscount(data.calendar, data.dates.left, data.dates.right) * minobs
+        minobs = bdayscount(data.calendar, dt_min(data), dt_max(data)) * minobs
     end
     if !isdefined(rr, :coef)
         return missing
@@ -108,14 +108,14 @@ function pred_diff(
 end
 
 function vec_internal(
-    data::TimelineTable{false},
+    data::MarketData,
     cache::RegressionCache,
     rr,
     sch,
     fun;
     minobs
 )
-    minobs = minobs < 1 ? bdayscount(data.calendar, data.dates.left, data.dates.right) * minobs : minobs
+    minobs = minobs < 1 ? bdayscount(data.calendar, dt_min(data), dt_max(data)) * minobs : minobs
     if length(data) < minobs || length(data) <= length(names(data))
         return missing
     end
@@ -137,11 +137,12 @@ function vector_pred_diff(
     cols = internal_termvars(f)
     sch = apply_schema(f, schema(f, parent_data))
     cache = create_pred_matrix(parent_data, sch)
+    update_request!(parent_data; cols)
     out = Vector{Union{Missing, Float64}}(missing, length(ids))
-    Threads.@threads for i in 1:length(ids)
+    for i in 1:length(ids)
         isdefined(rrs[i], :coef) || continue
-        data = parent_data[ids[i], date_mins[i] .. date_maxs[i], cols]
-        out[i] = vec_internal(data, cache, rrs[i], sch, fun; minobs)
+        update_request!(parent_data; id=ids[i], dates=date_mins[i] .. date_maxs[i])
+        out[i] = vec_internal(parent_data, cache, rrs[i], sch, fun; minobs)
     end
     if any(ismissing.(out))
         out
@@ -163,7 +164,7 @@ based off of the value provided (typically a market wide return).
 These functions treat missing returns in the period implicitly as a zero return.
 """
 function bhar(
-    data::TimelineTable,
+    data::MarketData,
     firm_col,
     mkt_col;
     minobs=0.8
@@ -172,7 +173,7 @@ function bhar(
 end
 
 function bhar(
-    data::TimelineTable{false},
+    data::MarketData,
     rr::RegressionModel;
     minobs=0.8
 )
@@ -204,7 +205,7 @@ undervalue extreme returns compared to buy and hold returns (bh_return or bhar).
 These functions treat missing returns in the period implicitly as a zero return.
 """
 function car(
-    data::TimelineTable,
+    data::MarketData,
     firm_col,
     mkt_col;
     minobs=0.8
@@ -213,7 +214,7 @@ function car(
 end
 
 function car(
-    data::TimelineTable{false},
+    data::MarketData,
     rr::RegressionModel;
     minobs=0.8
 )

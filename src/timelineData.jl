@@ -7,14 +7,12 @@ struct DataVector
 end
 
 struct RegressionCache
-    #terms::MatrixTerm{T}
     data::Matrix{Float64}
     dates::ClosedInterval{Date}
-    #missing_bdays::Union{Nothing, Vector{Int}}
     calendar::MarketCalendar
 end
 
-mutable struct MarketData{T, MNames, FNames, N1, N2}
+struct MarketData{T, MNames, FNames, N1, N2}
     calendar::MarketCalendar
     marketdata::NamedTuple{MNames, NTuple{N1, DataVector}} # column names as symbols
     firmdata::Dict{T, NamedTuple{FNames, NTuple{N2, DataVector}}} # data stored by firm id and then by column name as symbol
@@ -209,23 +207,10 @@ function date_range(cal::MarketCalendar, data::DataVector, dates::ClosedInterval
     date_range(cal, data.dates, dates)
 end
 
-# function Base.getindex(data::RegressionData, dates::ClosedInterval{Date})
-#     new_dates = dates_min_max(data.dates, dates)
-#     new_missings = adjust_missing_bdays(data, new_dates)
-#     new_missings2 = new_missings === nothing ? nothing : Set(new_missings)
-#     DataVector(raw_values(data)[date_range(data, new_dates)], new_missings2, new_dates, data.calendar)
-# end
-
 function Base.getindex(data::RegressionCache, dates::ClosedInterval{Date}, mssngs::Nothing)
     new_dates = dates_min_max(data.dates, dates)
     r = date_range(data.calendar, data.dates, new_dates)
     @view data.data[r, :]
-    # new_missings = adjust_missing_bdays(data.calendar, data.dates, new_dates)
-    # if new_missings === nothing
-    #     data.data[r, :]
-    # else
-    #     data.data[r[Not(new_missings)], :]
-    # end
 end
 
 function Base.getindex(data::RegressionCache, dates::ClosedInterval{Date}, mssngs::Vector{Int})

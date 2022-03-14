@@ -1,22 +1,18 @@
-using Distributions, DataFrames, DataFramesMeta, Arrow, Statistics, BusinessDays, Dates, CSV
+using Distributions, DataFrames, DataFramesMeta, Arrow, Statistics, Dates, CSV, ODBC, WRDSMerger
 using Revise
 using AbnormalReturns
 
 ##
+conn = ODBC.Connection("wrds-pgdata-64")
+##
 
-df_ff_data = @chain Arrow.Table(abspath("G:", "My Drive", "python", "tests", "werdsmerger tests", "temp_data", "ff_data.feather")) begin
-    DataFrame
-    copy
+df_ff_data = @chain ff_data(conn) begin
     @rtransform(:mkt = :mktrf + :rf)
 end
 
 ff_data_max = maximum(df_ff_data.date)
 
-@time df_crsp_raw = @chain Arrow.Table(abspath("G:", "My Drive", "python", "Share Pledging Analysis", "data", "general csv files", "crsp_daily.feather")) begin
-    DataFrame
-    select([:permno, :date, :ret, :retx, :shrout_adj])
-    @rsubset(:date <= ff_data_max)
-    copy
+@time df_crsp_raw = @chain crsp_data(conn, Date(1990), ff_data_max; cols=["ret"]) begin
     sort([:permno, :date])
 end
 

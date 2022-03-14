@@ -36,7 +36,7 @@ end
 
 ##
 
-@time AbnormalReturns.vector_reg(data, df_events.firm_id, df_events.est_window_start, df_events.est_window_end, @formula(ret ~ mkt))
+@time AbnormalReturns.vector_reg(data, df_events.firm_id, df_events.est_window_start, df_events.est_window_end, @formula(ret ~ mkt + smb + hml + umd))
 
 ##
 
@@ -51,7 +51,7 @@ function get_all_items(parent_data::MarketData{T}, ids::Vector{T}, date_starts::
     out = zeros(length(ids))
     for i in 1:length(ids)
         update_timeline_table(data, ids[i], date_starts[i] .. date_ends[i])
-        x = data[:, :ret]
+        @views x = data[:, :ret]
         out[i] = sum(x)
     end
     out

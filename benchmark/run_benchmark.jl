@@ -1,4 +1,4 @@
-using DataFrames, CSV, DataFramesMeta, Dates, BenchmarkTools, Cthulhu
+using DataFrames, CSV, DataFramesMeta, Dates, BenchmarkTools, Cthulhu, Traceur
 using Revise
 using AbnormalReturns
 
@@ -15,7 +15,6 @@ df_events = CSV.File(joinpath("data", "event_dates.csv")) |> DataFrame
 # Second run: 18.013269 seconds (629.12 k allocations: 11.719 GiB, 16.72% gc time)
 
 ##
-
 @time df_test = @chain df_events begin
     @transform(
         :reg_mkt = AbnormalReturns.vector_reg(data, :firm_id, :est_window_start, :est_window_end, @formula(ret ~ mkt)),
@@ -37,14 +36,12 @@ end
 
 ##
 
-@time @chain df_events[:, :] begin
-    @transform(:reg = AbnormalReturns.vector_reg(data, :firm_id, :est_window_start, :est_window_end, @formula(ret ~ 1 + mkt)),)
+@time @chain df_events[1:100000, :] begin
+    @transform(:reg = AbnormalReturns.vector_reg(data, :firm_id, :est_window_start, :est_window_end, @formula(ret ~ 1 + mkt + smb + hml + umd)),)
 end
 
 ##
-@descend AbnormalReturns.vector_reg(data, df_events.firm_id[1:1000], df_events.est_window_start[1:1000], df_events.est_window_end[1:1000], @formula(ret ~ mkt + smb + hml + umd); minobs=0.8, save_residuals=false)
 
-##
 x = temp_data[TimelineColumn(:ret)]
 @code_warntype x[Date(2018) .. Date(2019)]
 

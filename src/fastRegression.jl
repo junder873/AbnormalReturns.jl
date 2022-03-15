@@ -162,35 +162,21 @@ function quick_reg(
     )
 end
 
-function construct_id_dict(ids::Vector{T}) where {T}
-    out = Dict{T, Vector{Int}}()
-    sizehint!(out, length(ids))
-    for (i, id) in enumerate(ids)
-        if !haskey(out, id)
-            out[id] = Int[]
-        end
-        push!(out[id], i)
-    end
-    out
-end
-
 function fill_vector_reg(
-    parent_data::MarketData{T},
-    date_mins::AbstractVector{Date},
-    date_maxs::AbstractVector{Date},
+    data::IterateMarketData{T},
     out_vector::Vector{BasicReg{L,R}},
     cache::RegressionCache,
     sch::FormulaTerm{L2,R2},
-    all_ids::Dict{T, Vector{Int}},
     cols::Vector{TimelineColumn},
     f::FormulaTerm{L,R};
     minobs::V=0.8,
     save_residuals::Bool=false
 ) where {T, L, R, L2, R2, V<:Real}
-    for u_id in collect(keys(all_ids))
-        local_data = parent_data[u_id, cols]
-        @inbounds for i in all_ids[u_id]
-            update_dates!(local_data, date_mins[i] .. date_maxs[i])
+    @assert validate_iterator(data, out_vector) "Length of out_vector does not match the number of indexes in the iterator"
+    Threads.@threads for (u_id, iters, local_data) in data
+        select!(local_data, cols)
+        @inbounds for (i, d1, d2) in iters
+            update_dates!(local_data, d1 .. d2)
             out_vector[i] = BasicReg(
                 local_data,
                 cache,
@@ -217,18 +203,14 @@ function vector_reg(
         f = FormulaTerm(f.lhs, InterceptTerm{true}() + f.rhs)
     end
     cols = internal_termvars(f)
-    all_ids = construct_id_dict(ids)
     sch = apply_schema(f, schema(f, parent_data))
     cache = create_pred_matrix(parent_data[ids[1]], sch)
     out = fill(BasicReg(0, f), length(ids))
     fill_vector_reg(
-        parent_data,
-        date_mins,
-        date_maxs,
+        IterateMarketData(parent_data, ids, date_mins, date_maxs),
         out,
         cache,
         sch,
-        all_ids,
         cols,
         f;
         minobs,

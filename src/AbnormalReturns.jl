@@ -51,6 +51,7 @@ export lag, lead
 include("marketCalendar.jl")
 include("dictIndex.jl")
 include("timelineData.jl")
+include("utils.jl")
 include("fastRegression.jl")
 include("calcFunctions.jl")
 include("statsModelsModelcols.jl")

@@ -1,4 +1,4 @@
-using DataFrames, CSV, DataFramesMeta, Dates, BenchmarkTools, Cthulhu, Traceur
+using DataFrames, CSV, DataFramesMeta, Dates, BenchmarkTools, Cthulhu
 using Revise
 using AbnormalReturns
 
@@ -15,11 +15,13 @@ df_events = CSV.File(joinpath("data", "event_dates.csv")) |> DataFrame
 # Second run: 18.013269 seconds (629.12 k allocations: 11.719 GiB, 16.72% gc time)
 
 ##
-@time df_test = @chain df_events begin
-    @transform(
-        :reg_mkt = AbnormalReturns.vector_reg(data, :firm_id, :est_window_start, :est_window_end, @formula(ret ~ mkt)),
-        :reg_ffm = AbnormalReturns.vector_reg(data, :firm_id, :est_window_start, :est_window_end, @formula(ret ~ mkt + smb + hml + umd)),
-    )
+df_firm = 0
+df_mkt = 0
+GC.gc()
+##
+@time @chain df_events begin
+    @transform(:reg_mkt = AbnormalReturns.vector_reg(data, :firm_id, :est_window_start, :est_window_end, @formula(ret ~ mkt)),)
+    @transform(:reg_ffm = AbnormalReturns.vector_reg(data, :firm_id, :est_window_start, :est_window_end, @formula(ret ~ mkt + smb + hml + umd)),)
     # @transform(
     #     :bhar_mkt = AbnormalReturns.bhar(data, :firm_id, :event_window_start, :event_window_end, :reg_mkt),
     #     :bhar_ffm = AbnormalReturns.bhar(data, :firm_id, :event_window_start, :event_window_end, :reg_ffm),
@@ -36,15 +38,20 @@ end
 
 ##
 
-@time @chain df_events[1:100000, :] begin
-    @transform(:reg = AbnormalReturns.vector_reg(data, :firm_id, :est_window_start, :est_window_end, @formula(ret ~ 1 + mkt + smb + hml + umd)),)
+@time @chain df_events[1:1000000, :] begin
+    @transform(:reg = AbnormalReturns.vector_reg(data, :firm_id, :est_window_start, :est_window_end, @formula(ret ~ 1 + mkt + smb + hml + umd), minobs=1))
 end
-
 ##
 
+
+GC.enable(false)
+GC.enable(true)
+GC.gc()
 ##
+
 temp_data = data[1]
-x = temp_data[TimelineColumn(:ret)]
+AbnormalReturns.update_dates!(temp_data, Date(2018) .. Date(2019))
+x = temp_data[:, TimelineColumn(:ret)]
 # @code_warntype x[Date(2018) .. Date(2019)]
 view(temp_data[TimelineColumn(:ret)], Date(2018) .. Date(2019)) |> typeof
 

@@ -185,9 +185,6 @@ end
 function dates_min_max(date1::ClosedInterval{Date}, date2::ClosedInterval{Date})::ClosedInterval{Date}
     max(dt_min(date1), dt_min(date2)) .. min(dt_max(date1), dt_max(date2))
 end
-function dates_min_max(date::ClosedInterval{Date}, dates::Vector{ClosedInterval{Date}})::ClosedInterval{Date}
-    dates_min_max(date, dates_min_max(dates))
-end
 
 function all_dates(data::MarketData)
     shift_dates.(pick_data.(Ref(data), Symbol.(names(data))), shift_count.(names(data)))
@@ -209,17 +206,17 @@ function date_range(cal::MarketCalendar, timeline_dates::ClosedInterval{Date}, n
 end
 
 function date_range(cal::MarketCalendar, data::DataVector, dt_min::Date, dt_max::Date)
-    date_range(cal, data.dates, dt_min .. dt_max)
+    date_range(cal, data_dates(data), dt_min .. dt_max)
 end
 
 function date_range(cal::MarketCalendar, data::DataVector, dates::ClosedInterval{Date})
-    date_range(cal, data.dates, dates)
+    date_range(cal, data_dates(data), dates)
 end
 
 function Base.getindex(data::RegressionCache, dates::ClosedInterval{Date}, mssngs::SparseVector{Bool, Int})
-    new_dates = dates_min_max(data.dates, dates)
-    new_mssngs = get_missing_bdays(data.calendar, mssngs, dates, new_dates)
-    r = date_range(data.calendar, data.dates, new_dates)
+    new_dates = dates_min_max(data_dates(data), dates)
+    new_mssngs = get_missing_bdays(calendar(data), mssngs, dates, new_dates)
+    r = date_range(calendar(data), data_dates(data), new_dates)
     if nnz(new_mssngs) == 0
         return data.data[r, :]
     else
@@ -229,7 +226,7 @@ end
 
 function Base.getindex(data::DataVector, dates::ClosedInterval{Date})
     @assert dt_min(data) <= dt_min(dates) && dt_max(dates) <= dt_max(data) "Date range out of bounds"
-    data.data[date_range(calendar(data), data.dates, dates)] 
+    data.data[date_range(calendar(data), data_dates(data), dates)] 
 end
 
 function combine_missing_bdays(vals::SparseVector{Bool, Int}...)::SparseVector{Bool, Int}
@@ -260,13 +257,13 @@ end
 
 function Base.view(data::DataVector, dates::ClosedInterval{Date})
     @assert dt_min(data) <= dt_min(dates) && dt_max(dates) <= dt_max(data) "Date range out of bounds"
-    r = date_range(calendar(data), data.dates, dates)
+    r = date_range(calendar(data), data_dates(data), dates)
     view(data.data, r)
 end
 
 function Base.view(data::RegressionCache, dates::ClosedInterval{Date})
     @assert dt_min(data) <= dt_min(dates) && dt_max(dates) <= dt_max(data) "Date range out of bounds"
-    r = date_range(calendar(data), data.dates, dates)
+    r = date_range(calendar(data), data_dates(data), dates)
     view(data.data, r, :)
 end
 
@@ -304,11 +301,11 @@ function Base.getindex(
         data.firmdata[id][FNames],
         data.marketdata[MNames]
     )
-    real_dates = dates_min_max(dates, [data_dates(out_data[col]) for col in cols])
+    real_dates = dates_min_max([data_dates(out_data[col]) for col in cols])
     missing_bdays = combine_missing_bdays([get_missing_bdays(out_data[col], real_dates) for col in cols])
     TimelineTable(
         out_data,
-        real_dates,
+        dates,
         DictIndex(cols),
         missing_bdays,
         dates,
@@ -324,10 +321,20 @@ function Base.getindex(
     ::Colon,
     col::TimelineColumn
 )
-    if nnz(data_missing_bdays(data)) == 0
-        data[col][data_dates(data)]
+    ret_dates = dates_min_max(data_dates(data), norm_dates(data))
+    data[ret_dates, col]
+end
+
+function Base.getindex(
+    data::TimelineTable,
+    dates::ClosedInterval{Date},
+    col::TimelineColumn
+)
+    new_mssngs = get_missing_bdays(calendar(data), data_missing_bdays(data), data_dates(data), dates)
+    if nnz(new_mssngs) == 0
+        data[col][dates]
     else
-        data[col][data_dates(data)][(!).(data_missing_bdays(data))]
+        data[col][dates][(!).(new_mssngs)]
     end
 end
 
@@ -341,15 +348,21 @@ end
 
 function Base.getindex(
     data::TimelineTable,
+    dates::ClosedInterval{Date},
+    col::Symbol
+)
+    data[dates, TimelineColumn(col)]
+end
+
+function Base.getindex(
+    data::TimelineTable,
     dates::ClosedInterval{Date}
 )
-    real_dates = dates_min_max(dates, [data_dates(data[col]) for col in names(data)])
-    missing_bdays = combine_missing_bdays([get_missing_bdays(data[col], real_dates) for col in names(data)])
     TimelineTable(
         data.data,
-        real_dates,
+        data.dates,
         DictIndex(names(data)),
-        missing_bdays,
+        data.missing_bdays,
         dates,
         data.calendar
     )
@@ -401,8 +414,11 @@ function Tables.columnnames(x::MarketData)
 end
 
 
-function Base.length(x::TimelineTable)
-    return length(data_missing_bdays(x)) - nnz(data_missing_bdays(x))
+function Base.length(data::TimelineTable)
+    real_dates = dates_min_max(data_dates(data), norm_dates(data))
+    c = bdayscount(calendar(data), dt_min(real_dates), dt_max(real_dates)) + 1
+    new_mssngs = get_missing_bdays(calendar(data), data_missing_bdays(data), data_dates(data), real_dates)
+    return c - nnz(new_mssngs)
 end
 
 function Base.length(x::DataVector)
@@ -414,29 +430,6 @@ function update_dates!(
     dates::ClosedInterval{Date}
 )
     data.req_dates = dates
-    data.dates = dates_min_max(dates, [data_dates(data[col]) for col in names(data)])
-    data.missing_bdays = combine_missing_bdays([get_missing_bdays(data[col], data_dates(data)) for col in names(data)])
-end
-
-function update_data!(
-    data::TimelineTable;
-    dates::Union{ClosedInterval{Date}, Nothing}=nothing,
-    cols::Union{Vector{TimelineColumn}, Nothing}=nothing
-)
-    updates=false
-
-    if dates !== nothing && data.req_dates != dates
-        data.req_dates = dates
-        updates = true
-    end
-    if cols !== nothing && sort(cols) != sort(names(data))
-        data.cols = DictIndex(cols)
-        updates = true
-    end
-    if updates
-        data.dates = dates_min_max(data_dates(data), [data_dates(data[col]) for col in names(data)])
-        data.missing_bdays = combine_missing_bdays([get_missing_bdays(data[col], data_dates(data)) for col in names(data)])
-    end
     data
 end
 
@@ -445,8 +438,14 @@ end
 function DataFrames.select!(x::TimelineTable, cols::Vector)
     select!(x, TimelineColumn.(cols))
 end
-function DataFrames.select!(x::TimelineTable, cols::Vector{TimelineColumn})
-    update_data!(x; cols)
+function DataFrames.select!(data::TimelineTable, cols::Vector{TimelineColumn})
+    updates = sort(cols) != sort(names(data)) # if the columns are changing, then update dates and missing_bdays
+    data.cols = DictIndex(cols)
+    if updates
+        data.dates = dates_min_max([data_dates(data[col]) for col in names(data)])
+        data.missing_bdays = combine_missing_bdays([get_missing_bdays(data[col], data_dates(data)) for col in names(data)])
+    end
+    data
 end
 
 
@@ -460,6 +459,7 @@ data_missing_bdays(x::RegressionCache) = x.missing_bdays
 
 data_dates(x::TimelineTable) = x.dates
 data_missing_bdays(x::TimelineTable) = x.missing_bdays
+norm_dates(x::TimelineTable) = x.req_dates
 
 calendar(x::DataVector) = x.calendar
 calendar(x::RegressionCache) = x.calendar

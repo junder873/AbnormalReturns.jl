@@ -25,8 +25,8 @@ function shift_dates(data::DataVector, shifts::Int)
     end
 
     # shifts = 2 # shifts = -2
-    obj_end_to_cal_end = bdayscount(data.calendar, dt_max(data), data.calendar.dtmax) # 1
-    obj_start_to_cal_start = bdayscount(data.calendar, dt_min(data), data.calendar.dtmin) # -1
+    obj_end_to_cal_end = bdayscount(data.calendar, dt_max(data), cal_dt_max(data)) # 1
+    obj_start_to_cal_start = bdayscount(data.calendar, dt_min(data), cal_dt_min(data)) # -1
     dt_min_change = max(shifts, obj_start_to_cal_start) # 2 # -1
     dt_max_change = min(shifts, obj_end_to_cal_end) # 1 # -2
     dt_min = advancebdays(data.calendar, dt_min(data), dt_min_change) # = x.dates.left + 2 # = x.datesleft - 1 = cal.dtmin

@@ -175,38 +175,30 @@ function fill_vector_reg(
     @assert validate_iterator(parent_data, out_vector) "Length of out_vector does not match the number of indexes in the iterator"
 
     yname, xnames = coefnames(sch)
-
-    Threads.@threads for (u_id, iters, data) in parent_data
+    pred = cache.data[:, :]
+    for (u_id, iters, data) in parent_data
         select!(data, cols)
+        resp = modelcols(int_lhs(sch), data)
         for (i, d1, d2) in iters
-            update_dates!(data, d1 .. d2)
+            r = date_range(calendar(data), data_dates(data), d1 .. d2)
+            #update_dates!(data, d1 .. d2)
             local_minobs = if minobs < 1
                 bdayscount(data.calendar, dt_min(data), dt_max(data)) * minobs
             else
                 minobs
             end
-            @inbounds out_vector[i] = if length(data) < local_minobs
-                BasicReg(length(data), f)
+            @inbounds out_vector[i] = if length(r) < local_minobs
+                BasicReg(length(r), f)
             else
-                resp = modelcols(int_lhs(sch), data)
-                pred = cache[d1 .. d2, data_missing_bdays(data)]
-                BasicReg(
-                    resp,
-                    pred,
+                @views BasicReg(
+                    resp[r],
+                    pred[r, :],
                     yname,
                     xnames,
                     f;
                     save_residuals
                 )
             end
-            # out_vector[i] = BasicReg(
-            #     local_data,
-            #     cache,
-            #     sch,
-            #     f;
-            #     minobs,
-            #     save_residuals
-            # )
         end
     end
     out_vector

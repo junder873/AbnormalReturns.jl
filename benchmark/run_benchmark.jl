@@ -15,8 +15,8 @@ df_events = CSV.File(joinpath("data", "event_dates.csv")) |> DataFrame
 # Second run: 18.013269 seconds (629.12 k allocations: 11.719 GiB, 16.72% gc time)
 
 ##
-df_firm = 0
-df_mkt = 0
+df_firm = nothing
+df_mkt = nothing
 GC.gc()
 ##
 @time @chain df_events begin
@@ -39,8 +39,10 @@ end
 ##
 
 @time @chain df_events[1:1000000, :] begin
-    @transform(:reg = AbnormalReturns.vector_reg(data, :firm_id, :est_window_start, :est_window_end, @formula(ret ~ 1 + mkt + smb + hml + umd), minobs=1))
+    @transform(:reg = AbnormalReturns.vector_reg(data, :firm_id, :est_window_start, :est_window_end, @formula(ret ~ 1 + mkt + smb + hml + umd); minobs=1))
 end
+##
+@descend AbnormalReturns.vector_reg(data, df_events.firm_id, df_events.est_window_start, df_events.est_window_end, @formula(ret ~ 1 + mkt + smb + hml + umd))
 ##
 
 
@@ -48,7 +50,23 @@ GC.enable(false)
 GC.enable(true)
 GC.gc()
 ##
+ids = df_events.firm_id
+f = @formula(ret ~ 1 + mkt + smb + hml + umd)
+cols = AbnormalReturns.internal_termvars(f)
+sch = apply_schema(f, schema(f, data))
+cache = AbnormalReturns.create_pred_matrix(data[ids[1]], sch)
+out = fill(BasicReg(0, f), length(ids))
 
+@descend AbnormalReturns.fill_vector_reg(
+    AbnormalReturns.IterateMarketData(data, ids, df_events.est_window_start, df_events.est_window_end),
+    out,
+    cache,
+    sch,
+    cols,
+    f
+)
+
+##
 temp_data = data[1]
 AbnormalReturns.update_dates!(temp_data, Date(2018) .. Date(2019))
 x = temp_data[:, TimelineColumn(:ret)]

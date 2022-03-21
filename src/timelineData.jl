@@ -426,9 +426,9 @@ function Base.length(x::DataVector)
 end
 
 function update_dates!(
-    data::TimelineTable,
+    data::TimelineTable{Names, N},
     dates::ClosedInterval{Date}
-)
+) where {Names, N}
     data.req_dates = dates
     data
 end
@@ -490,17 +490,17 @@ function Base.show(io::IO, data::MarketData{T, MNames, FNames}) where {T, MNames
 end
 
 dt_min(x::ClosedInterval{Date}) = x.left
-dt_min(x::TimelineTable) = x.dates.left
+dt_min(x::TimelineTable) = x.req_dates.left
 dt_min(x::DataVector) = x.dates.left
 dt_min(x::RegressionCache) = x.dates.left
 dt_max(x::ClosedInterval{Date}) = x.right
-dt_max(x::TimelineTable) = x.dates.right
+dt_max(x::TimelineTable) = x.req_dates.right
 dt_max(x::DataVector) = x.dates.right
 dt_max(x::RegressionCache) = x.dates.right
 
-cal_dt_min(x::DataVector) = cal_dt_min(x.calendar)
-cal_dt_max(x::DataVector) = cal_dt_max(x.calendar)
-cal_dt_min(x::TimelineTable) = cal_dt_min(x.calendar)
-cal_dt_max(x::TimelineTable) = cal_dt_max(x.calendar)
-cal_dt_min(x::MarketData) = cal_dt_min(x.calendar)
-cal_dt_max(x::MarketData) = cal_dt_max(x.calendar)
+cal_dt_min(x::DataVector) = cal_dt_min(calendar(x))
+cal_dt_max(x::DataVector) = cal_dt_max(calendar(x))
+cal_dt_min(x::TimelineTable) = cal_dt_min(calendar(x))
+cal_dt_max(x::TimelineTable) = cal_dt_max(calendar(x))
+cal_dt_min(x::MarketData) = cal_dt_min(calendar(x))
+cal_dt_max(x::MarketData) = cal_dt_max(calendar(x))

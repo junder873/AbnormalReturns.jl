@@ -38,32 +38,31 @@ end
 
 ##
 
-@time @chain df_events[1:1000000, :] begin
+@time df_test = @chain df_events[1:1000000, :] begin
     @transform(:reg = AbnormalReturns.vector_reg(data, :firm_id, :est_window_start, :est_window_end, @formula(ret ~ 1 + mkt + smb + hml + umd); minobs=1))
 end
 ##
-@descend AbnormalReturns.vector_reg(data, df_events.firm_id, df_events.est_window_start, df_events.est_window_end, @formula(ret ~ 1 + mkt + smb + hml + umd))
-##
-
 
 GC.enable(false)
 GC.enable(true)
 GC.gc()
 ##
 ids = df_events.firm_id
-f = @formula(ret ~ 1 + mkt + smb + hml + umd)
-cols = AbnormalReturns.internal_termvars(f)
-sch = apply_schema(f, schema(f, data))
+temp_f = @formula(ret ~ 1 + mkt + smb + hml + umd)
+cols = AbnormalReturns.internal_termvars(temp_f)
+sch = apply_schema(temp_f, schema(temp_f, data))
 cache = AbnormalReturns.create_pred_matrix(data[ids[1]], sch)
-out = fill(BasicReg(0, f), length(ids))
+out = fill(BasicReg(0, temp_f), length(ids))
+iter_dict = AbnormalReturns.construct_id_dict(ids, df_events.est_window_start, df_events.est_window_end)
 
-@descend AbnormalReturns.fill_vector_reg(
-    AbnormalReturns.IterateMarketData(data, ids, df_events.est_window_start, df_events.est_window_end),
+@time AbnormalReturns.fill_vector_reg(
+    data,
+    iter_dict,
     out,
     cache,
     sch,
     cols,
-    f
+    temp_f
 )
 
 ##

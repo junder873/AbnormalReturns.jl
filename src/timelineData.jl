@@ -23,13 +23,13 @@ struct MarketData{T, MNames, FNames, N1, N2}
     firmdata::Dict{T, NamedTuple{FNames, NTuple{N2, DataVector}}} # data stored by firm id and then by column name as symbol
 end
 
-mutable struct TimelineTable{Names, N}
-    data::NamedTuple{Names, NTuple{N, DataVector}}
+mutable struct TimelineTable{T, MNames, FNames, N1, N2}
+    parent::MarketData{T, MNames, FNames, N1, N2}
+    id::T
     dates::ClosedInterval{Date}# actual returnable dates that guarentees a square matrix
     cols::DictIndex
     missing_bdays::SparseVector{Bool, Int}
     req_dates::ClosedInterval{Date}# dates requested, matters for calculating missing obs
-    calendar::MarketCalendar
 end
 
 function MarketData(
@@ -274,21 +274,13 @@ end
 
 Base.getindex(data::NamedTuple{Names, NTuple{N, DataVector}}, col::TimelineColumn) where {Names, N} = shift(data[Symbol(col)], col.shifts)
 
+function Base.getindex(data::MarketData{T, MNames, FNames}, id::T, col::TimelineColumn) where {T, MNames, FNames}
+    shift(pick_data(data, id, Symbol(col)), col.shifts)
+end
+
 function Base.getindex(data::MarketData{T, MNames, FNames}, id::T, cols::Vector{TimelineColumn}=TimelineColumn.([FNames..., MNames...])) where {T, MNames, FNames}
-    out_data = merge(
-        data.firmdata[id][FNames],
-        data.marketdata[MNames]
-    )
-    real_dates = dates_min_max([data_dates(out_data[col]) for col in cols])
-    missing_bdays = combine_missing_bdays([get_missing_bdays(out_data[col], real_dates) for col in cols])
-    TimelineTable(
-        out_data,
-        real_dates,
-        DictIndex(cols),
-        missing_bdays,
-        real_dates,
-        data.calendar
-    )
+    real_dates = dates_min_max(get_all_dates(data, id, cols))
+    data[id, real_dates, cols]
 end
 
 function Base.getindex(
@@ -297,23 +289,21 @@ function Base.getindex(
     dates::ClosedInterval{Date},
     cols::Vector{TimelineColumn}=TimelineColumn.([FNames..., MNames...])
 ) where {T, MNames, FNames}
-    out_data = merge(
-        data.firmdata[id][FNames],
-        data.marketdata[MNames]
-    )
-    real_dates = dates_min_max([data_dates(out_data[col]) for col in cols])
-    missing_bdays = combine_missing_bdays([get_missing_bdays(out_data[col], real_dates) for col in cols])
-    TimelineTable(
-        out_data,
-        dates,
+    out = TimelineTable(
+        data,
+        id,
+        dates_min_max(get_all_dates(data, id, cols)),
         DictIndex(cols),
-        missing_bdays,
+        sparsevec(zeros(Bool, bdayscount(calendar(data), dt_min(dates), dt_max(dates)))),
         dates,
-        data.calendar
     )
+    out.missing_bdays = combine_all_missing_bdays(out)
+    out
 end
 
-Base.getindex(data::TimelineTable, col::TimelineColumn) = col.shifts == 0 ? data.data[Symbol(col)] : shift(data.data[Symbol(col)], col.shifts)
+function Base.getindex(data::TimelineTable, col::TimelineColumn)
+    parent(data)[data.id, col]
+end
 Base.getindex(data::TimelineTable, col::Symbol) = data[TimelineColumn(col)]
 
 function Base.getindex(
@@ -359,12 +349,12 @@ function Base.getindex(
     dates::ClosedInterval{Date}
 )
     TimelineTable(
-        data.data,
+        data.parent,
+        data.id,
         data.dates,
         DictIndex(names(data)),
         data.missing_bdays,
         dates,
-        data.calendar
     )
 end
 
@@ -426,14 +416,24 @@ function Base.length(x::DataVector)
 end
 
 function update_dates!(
-    data::TimelineTable{Names, N},
+    data::TimelineTable,
     dates::ClosedInterval{Date}
-) where {Names, N}
+)
     data.req_dates = dates
     data
 end
 
-
+function update_id!(
+    data::TimelineTable{T},
+    id::T
+) where {T}
+    if id != data.id
+        data.id = id
+        data.dates = dates_min_max(get_all_dates(data))
+        data.missing_bdays = combine_all_missing_bdays(data)
+    end
+    data
+end
 
 function DataFrames.select!(x::TimelineTable, cols::Vector)
     select!(x, TimelineColumn.(cols))
@@ -442,12 +442,42 @@ function DataFrames.select!(data::TimelineTable, cols::Vector{TimelineColumn})
     updates = sort(cols) != sort(names(data)) # if the columns are changing, then update dates and missing_bdays
     data.cols = DictIndex(cols)
     if updates
-        data.dates = dates_min_max([data_dates(data[col]) for col in names(data)])
-        data.missing_bdays = combine_missing_bdays([get_missing_bdays(data[col], data_dates(data)) for col in names(data)])
+        data.dates = dates_min_max(get_all_dates(data))
+        data.missing_bdays = combine_all_missing_bdays(data)
     end
     data
 end
 
+function get_all_dates(data::MarketData{T}, id::T, cols::Vector{TimelineColumn}) where {T}
+    shift_dates.(
+        pick_data.(Ref(data), id, Symbol.(cols)),
+        shift_count.(cols)
+    )
+end
+
+function get_all_dates(data::TimelineTable)
+    get_all_dates(parent(data), data.id, names(data))
+end
+
+function combine_all_missing_bdays(data::TimelineTable)
+    out = sparsevec(
+        zeros(
+            Bool,
+            bdayscount(
+                calendar(data),
+                dt_min(data_dates(data)),
+                dt_max(data_dates(data))
+            ) + 1
+        )
+    )
+    for col in names(data)
+        mssngs = data_missing_bdays(data[col])
+        if nnz(mssngs) > 0
+            out = out .| get_missing_bdays(data[col], data_dates(data))
+        end
+    end
+    out
+end
 
 raw_values(x::DataVector) = x.data
 data_dates(x::DataVector) = x.dates
@@ -460,15 +490,18 @@ data_missing_bdays(x::RegressionCache) = x.missing_bdays
 data_dates(x::TimelineTable) = x.dates
 data_missing_bdays(x::TimelineTable) = x.missing_bdays
 norm_dates(x::TimelineTable) = x.req_dates
+parent(data::TimelineTable) = data.parent
 
 calendar(x::DataVector) = x.calendar
 calendar(x::RegressionCache) = x.calendar
 calendar(x::MarketData) = x.calendar
-calendar(x::TimelineTable) = x.calendar
+calendar(x::TimelineTable) = calendar(parent(x))
 
-firmdata(x::MarketData{T}, i::T, sym::Symbol) where {T} = x.firmdata[i][sym]
-marketdata(x::MarketData, sym::Symbol) = x.marketdata[sym]
+firmdata(data::MarketData{T}, i::T, sym::Symbol) where {T} = data.firmdata[i][sym]
+marketdata(data::MarketData, sym::Symbol) = data.marketdata[sym]
 pick_data(data::MarketData{T, MNames, FNames}, id::T, sym::Symbol) where {T, MNames, FNames} = sym ∈ FNames ? firmdata(data, id, sym) : marketdata(data, sym)
+
+pick_data(data::MarketData{T}, id::T, col::TimelineColumn) where {T} = pick_data(data, id, Symbol(col))
 
 data_dates(x::MarketData) = x.dates
 

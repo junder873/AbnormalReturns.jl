@@ -14,7 +14,7 @@ struct IterateMarketData{T, MNames, FNames, N1, N2}
     index_vec::Vector{T}
     function IterateMarketData(data::MarketData{T, MNames, FNames, N1, N2}, index_dict, index_vec) where {T, MNames, FNames, N1, N2}
         @assert Set(index_vec) ⊆ Set(keys(index_dict)) "Some Keys are Missing"
-        @assert Set(keys(index_dict)) ⊆ Set(keys(data.firmdata))
+        @assert Set(keys(index_dict)) ⊆ Set(keys(data.firmdata)) "Some Keys are not in the Parent Data"
         new{T, MNames, FNames, N1, N2}(data, index_dict, index_vec)
     end
 end
@@ -47,24 +47,24 @@ function Base.iterate(iter::IterateMarketData{T, MNames, FNames}, state=1) where
 end
 
 function Base.eltype(::IterateMarketData{T, MNames, FNames, N1, N2}) where {T, MNames, FNames, N1, N2}
-    Tuple{T, Vector{Tuple{Int, Date, Date}}, AbnormalReturns.TimelineTable{(MNames..., FNames...), N1 + N2}}
+    Tuple{T, Vector{Tuple{Int, Date, Date}}}
 end
 function Base.length(iter::IterateMarketData)
     length(iter.index_vec)
 end
 
 function validate_iterator(
-    data::IterateMarketData,
+    data::Dict,
     out_vector::Vector
 )
-    all_ids = first.(vcat(values(data.index_dict)...)) |> sort
+    all_ids = first.(vcat(values(data)...)) |> sort
     all_ids == 1:length(out_vector)
 end
 
 function Base.getindex(data::IterateMarketData, i::Int)
     1 <= i <= length(data) || throw(BoundsError(data, i))
     id = data.index_vec[i]
-    (id, data.index_dict[id], data.data[id])
+    (id, data.index_dict[id])
 end
 
 Base.firstindex(data::IterateMarketData) = 1

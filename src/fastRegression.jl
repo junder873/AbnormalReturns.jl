@@ -17,6 +17,35 @@ struct BasicReg{L,R} <: RegressionModel
     BasicReg(x::Int, f::FormulaTerm{L,R}) where {L, R} = new{L,R}(x, f)
 end
 
+# These are created to minimize the amount of allocations Julia does
+# Julia typically allocates a vector for each loop, which when using
+# so many loops, can create real garbage collection problems
+# As it turns out, doing sum(abs2, resp - mean(resp)) also does
+# an allocation, which could mean allocating a huge amount
+# caluclating rss was even worse, so these functions are only
+# meant to be used internally but do not allocate if passed a view
+function calc_tss(resp)
+    out = 0.0
+    m = mean(resp)
+    @simd for x in resp
+        out += (x - m) ^ 2
+    end
+    out
+end
+function fast_pred(pred, coef, i)
+    out = 0.0
+    @simd for j in 1:length(coef)
+        @inbounds out += pred[i, j] * coef[j]
+    end
+    out
+end
+function calc_rss(resp, pred, coef)
+    out = 0.0
+    @simd for i in 1:length(resp)
+        @inbounds out += (resp[i] - fast_pred(pred, coef, i)) ^ 2
+    end
+    out
+end
 function BasicReg(
     resp::AbstractVector{Float64},
     pred::AbstractMatrix{Float64},
@@ -28,13 +57,10 @@ function BasicReg(
     if length(resp) <= size(pred, 2)
         return BasicReg(length(resp), f)
     end
-    # display(pred)
-    # display(resp)
 
     coef = cholesky!(Symmetric(pred' * pred)) \ (pred' * resp)
-    resid = resp .- pred * coef
-    rss = sum(abs2, resid)
-    tss = sum(abs2, (resp .- mean(resp)))
+    rss = calc_rss(resp, pred, coef)
+    tss = calc_tss(resp)
 
     BasicReg(
         length(resp),
@@ -44,7 +70,7 @@ function BasicReg(
         yname,
         tss,
         rss,
-        save_residuals ? resid : nothing
+        save_residuals ? resp - pred * coef : nothing
     )
 end
 
@@ -119,8 +145,8 @@ function create_pred_matrix(data::TimelineTable, sch)
     #update_request!(data, cols=old_cols, dates=old_dates)
     RegressionCache(
             mat,
-            data.dates,
-            data.calendar
+            data_dates(data),
+            calendar(data)
         )
 end
 
@@ -163,7 +189,8 @@ function quick_reg(
 end
 
 function fill_vector_reg(
-    parent_data::IterateMarketData{T},
+    parent_data::MarketData{T},
+    iters::Dict{T, Vector{Tuple{Int, Date, Date}}},
     out_vector::Vector{BasicReg{L,R}},
     cache::RegressionCache,
     sch::FormulaTerm{L2,R2},
@@ -172,18 +199,18 @@ function fill_vector_reg(
     minobs::V=0.8,
     save_residuals::Bool=false
 ) where {T, L, R, L2, R2, V<:Real}
-    @assert validate_iterator(parent_data, out_vector) "Length of out_vector does not match the number of indexes in the iterator"
+    @assert validate_iterator(iters, out_vector) "Length of out_vector does not match the number of indexes in the iterator"
 
     yname, xnames = coefnames(sch)
     pred = cache.data[:, :]
-    for (u_id, iters, data) in parent_data
-        select!(data, cols)
+    
+    Threads.@threads for u_id in keys(iters) |> collect
+        data = parent_data[u_id, cols]
         resp = modelcols(int_lhs(sch), data)
-        for (i, d1, d2) in iters
+        for (i, d1, d2) in iters[u_id]
             r = date_range(calendar(data), data_dates(data), d1 .. d2)
-            #update_dates!(data, d1 .. d2)
             local_minobs = if minobs < 1
-                bdayscount(data.calendar, dt_min(data), dt_max(data)) * minobs
+                bdayscount(calendar(data), d1, d2) * minobs
             else
                 minobs
             end
@@ -220,8 +247,10 @@ function vector_reg(
     sch = apply_schema(f, schema(f, parent_data))
     cache = create_pred_matrix(parent_data[ids[1]], sch)
     out = fill(BasicReg(0, f), length(ids))
+    iter_dict = construct_id_dict(ids, date_mins, date_maxs)
     fill_vector_reg(
-        IterateMarketData(parent_data, ids, date_mins, date_maxs),
+        parent_data,
+        iter_dict,
         out,
         cache,
         sch,

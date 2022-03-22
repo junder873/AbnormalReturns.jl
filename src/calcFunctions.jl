@@ -5,7 +5,7 @@ Statistics.std(rr::RegressionModel) = sqrt(var(rr))
 # it seems like I want some kind of formula with a similar minobs option for a lot
 # of these functions as well.
 function Statistics.var(
-    data::MarketData,
+    data::TimelineTable,
     col_firm,
     col_market;
     minobs=0.8
@@ -21,7 +21,7 @@ function Statistics.var(
 end
 
 function Statistics.std(
-    data::MarketData,
+    data::TimelineTable,
     col_firm,
     col_market;
     minobs=0.8
@@ -29,9 +29,46 @@ function Statistics.std(
     sqrt(var(data, col_firm, col_market; minobs))
 end
 
-bh_return(x) = prod(1 .+ skipmissing(x)) - 1
-bhar(x, y) = bh_return(x) - bh_return(y)
-car(x, y) = sum(skipmissing(x)) - sum(skipmissing(y))
+function bh_return(vals::AbstractVector{Float64})
+    out = 0.0
+    @simd for x in vals
+        out *= (1 + x)
+    end
+    out - 1
+end
+function bh_return(vals::AbstractVector{Union{Missing, Float64}})
+    out = 0.0
+    @simd for x in vals
+        if ismissing(x)
+            out *= 1
+        else
+            out *= (1+x)
+        end
+    end
+    out - 1
+end
+
+function bh_return(pred::AbstractMatrix, coef)
+    out = 0.0
+    @simd for i in 1:size(pred, 2)
+        @inbounds out *= (fast_pred(pred, coef, i) + 1)
+    end
+    out - 1
+end
+
+bhar(resp, pred, coef) = bh_return(resp) - bh_return(pred, coef)
+
+bhar(x::AbstractVector, y::AbstractVector) = bh_return(x) - bh_return(y)
+
+function cumulative_return(pred::AbstractMatrix, coef)
+    out = 0.0
+    @simd for i in 1:size(pred, 2)
+        @inbounds out += fast_pred(pred, coef, i)
+    end
+    out
+end
+car(resp, pred, coef) = sum(resp) - cumulative_return(pred, coef)
+car(x::AbstractVector, y::AbstractVector) = sum(skipmissing(x)) - sum(skipmissing(y))
 
 # for firm data
 """
@@ -44,7 +81,7 @@ is calculated for the MARKET_DATA_CACHE.
 
 These functions treat missing returns in the period implicitly as a zero return.
 """
-function bh_return(data::MarketData, col; minobs=0.8)
+function bh_return(data::TimelineTable, col; minobs=0.8)
     if minobs < 1
         minobs = bdayscount(data.calendar, dt_min(data), dt_max(data)) * minobs
     end
@@ -56,7 +93,7 @@ function bh_return(data::MarketData, col; minobs=0.8)
     end
 end
 
-function sum_return(data::MarketData, col; minobs=0.8)
+function sum_return(data::TimelineTable, col; minobs=0.8)
     if minobs < 1
         minobs = bdayscount(data.calendar, dt_min(data), dt_max(data)) * minobs
     end
@@ -69,11 +106,11 @@ function sum_return(data::MarketData, col; minobs=0.8)
 end
 
 function simple_diff(
-    data::MarketData,
+    data::TimelineTable,
     firm_col,
     mkt_col,
     fun;
-    minobs::Float64=0.8
+    minobs=0.8
 )
     if minobs < 1
         minobs = bdayscount(data.calendar, dt_min(data), dt_max(data)) * minobs
@@ -83,7 +120,7 @@ function simple_diff(
 end
 
 function pred_diff(
-    data::MarketData,
+    data::TimelineTable,
     rr::RegressionModel,
     fun;
     minobs::Float64=0.8
@@ -95,7 +132,8 @@ function pred_diff(
         return missing
     end
     f = rr.formula
-    select!(data, internal_termvars(f))
+    sch = apply_schema(f, schema(f, data))
+    select!(data, internal_termvars(sch))
     #data = dropmissing(data)
     if length(data) < minobs || length(data) <= length(names(data))
         return missing
@@ -107,21 +145,43 @@ function pred_diff(
     fun(resp, predict(rr, pred))
 end
 
-function vec_internal(
-    data::MarketData,
-    cache::RegressionCache,
-    rr,
+function fill_vector_pred!(
+    out_vector::Vector{Union{Missing, Float64}},
+    parent_data::MarketData{T},
+    iters::Dict{T, Vector{IterateOutput}},
+    cache::DataMatrix,
     sch,
-    fun;
-    minobs
-)
-    minobs = minobs < 1 ? bdayscount(data.calendar, dt_min(data), dt_max(data)) * minobs : minobs
-    if length(data) < minobs || length(data) <= length(names(data))
-        return missing
+    rrs::Vector{BasicReg{L,R}},
+    fun
+) where {T, L, R}
+    @assert validate_iterator(iters, out_vector) "Length of out_vector does not match the number of indexes in the iterator"
+    cols = internal_termvars(sch)
+    Threads.@threads for u_id in keys(iters) |> collect
+        data = parent_data[u_id, cols, AllowMissing{true}]
+        resp = datavector_modelcols(int_lhs(sch), data)
+        for iter in iters[u_id]
+            isdefined(rrs[iter_index(iter)], :coef) || continue
+            cur_dates = dates_min_max(data_dates(data), iter_dates(iter))
+            if nnz(data_missing_bdays(data)) == 0
+                x = view(resp, cur_dates)
+                y = view(cache, cur_dates)
+            else
+                x = view(resp, cur_dates, new_mssngs)
+                y = view(cache, cur_dates, new_mssngs)
+            end
+            
+            length(x) < iter_minobs(iter) && continue
+
+            @inbounds out_vector[iter_index(iter)] = fun(
+                x,
+                y,
+                coef(rrs[iter_index(iter)])
+                #predict(rrs[iter_index(iter)], y)
+            )
+
+        end
     end
-    resp = modelcols(sch.lhs, data)
-    pred = cache[data.dates, data.missing_bdays]
-    fun(resp, predict(rr, pred))
+    out_vector
 end
 
 function vector_pred_diff(
@@ -134,16 +194,24 @@ function vector_pred_diff(
     minobs=0.8
 ) where {T, L, R}
     f = rrs[1].formula
-    cols = internal_termvars(f)
     sch = apply_schema(f, schema(f, parent_data))
-    cache = create_pred_matrix(parent_data, sch)
-    update_request!(parent_data; cols)
+    cols = internal_termvars(sch)
+    
+    cache = create_pred_matrix(
+        parent_data[ids[1], internal_termvars(sch.rhs), AllowMissing{true}],
+        sch
+    )
     out = Vector{Union{Missing, Float64}}(missing, length(ids))
-    for i in 1:length(ids)
-        isdefined(rrs[i], :coef) || continue
-        update_request!(parent_data; id=ids[i], dates=date_mins[i] .. date_maxs[i])
-        out[i] = vec_internal(parent_data, cache, rrs[i], sch, fun; minobs)
-    end
+    iter_dict = construct_id_dict(ids, date_mins, date_maxs, calendar(parent_data); minobs)
+    fill_vector_pred!(
+        out,
+        parent_data,
+        iter_dict,
+        cache,
+        sch,
+        rrs,
+        fun
+    )
     if any(ismissing.(out))
         out
     else
@@ -164,7 +232,7 @@ based off of the value provided (typically a market wide return).
 These functions treat missing returns in the period implicitly as a zero return.
 """
 function bhar(
-    data::MarketData,
+    data::TimelineTable,
     firm_col,
     mkt_col;
     minobs=0.8
@@ -173,7 +241,7 @@ function bhar(
 end
 
 function bhar(
-    data::MarketData,
+    data::TimelineTable,
     rr::RegressionModel;
     minobs=0.8
 )
@@ -205,7 +273,7 @@ undervalue extreme returns compared to buy and hold returns (bh_return or bhar).
 These functions treat missing returns in the period implicitly as a zero return.
 """
 function car(
-    data::MarketData,
+    data::TimelineTable,
     firm_col,
     mkt_col;
     minobs=0.8
@@ -214,7 +282,7 @@ function car(
 end
 
 function car(
-    data::MarketData,
+    data::TimelineTable,
     rr::RegressionModel;
     minobs=0.8
 )

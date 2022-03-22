@@ -1,6 +1,7 @@
 
+abstract type CalendarData end
 
-struct DataVector
+struct DataVector <: CalendarData
     data::Vector{Float64}
     missing_bdays::SparseVector{Bool, Int}
     dates::ClosedInterval{Date}
@@ -11,10 +12,15 @@ struct DataVector
     end
 end
 
-struct RegressionCache
+struct DataMatrix <: CalendarData
     data::Matrix{Float64}
+    missing_bdays::SparseVector{Bool, Int}# corresponds to each row with a missing value
     dates::ClosedInterval{Date}
     calendar::MarketCalendar
+    function DataMatrix(data, missing_bdays, dates, calendar)
+        @assert size(data, 1) == length(missing_bdays) == bdayscount(calendar, dates.left, dates.right) + 1 "Data does not match length of dates or missings"
+        new(data, missing_bdays, dates, calendar)
+    end
 end
 
 struct MarketData{T, MNames, FNames, N1, N2}
@@ -23,9 +29,12 @@ struct MarketData{T, MNames, FNames, N1, N2}
     firmdata::Dict{T, NamedTuple{FNames, NTuple{N2, DataVector}}} # data stored by firm id and then by column name as symbol
 end
 
-mutable struct TimelineTable{T, MNames, FNames, N1, N2}
+struct AllowMissing{mssng} end
+
+mutable struct TimelineTable{Mssng, T, MNames, FNames, N1, N2} <: Tables.AbstractColumns
     parent::MarketData{T, MNames, FNames, N1, N2}
     id::T
+    allow_missing::Type{AllowMissing{Mssng}}
     dates::ClosedInterval{Date}# actual returnable dates that guarentees a square matrix
     cols::DictIndex
     missing_bdays::SparseVector{Bool, Int}
@@ -134,6 +143,30 @@ function check_all_businessdays(dates, cal)
     end
 end
 
+function setup_calendar_data(f, data, dates::ClosedInterval{Date}, cal::MarketCalendar)
+    if any(ismissing.(data))
+        missing_days = sparsevec(any(ismissing, data, dims=2))
+        data = coalesce.(data, zero(nonmissingtype(eltype(data))))
+    else
+        missing_days = spzeros(Bool, size(data, 1))
+    end
+    f(
+        data,
+        missing_days,
+        dates,
+        cal
+    )
+end
+
+function DataVector(data::AbstractVector, dates::ClosedInterval{Date}, cal::MarketCalendar)
+    setup_calendar_data(
+        DataVector,
+        data,
+        dates,
+        cal
+    )
+end
+
 function DataVector(data::AbstractVector, dates::AbstractVector{Date}, cal::MarketCalendar)
     if any(ismissing.(data))
         if all(ismissing.(data))
@@ -146,23 +179,30 @@ function DataVector(data::AbstractVector, dates::AbstractVector{Date}, cal::Mark
         end
         i = findfirst(!ismissing, data)
         j = findlast(!ismissing, data)
-        data = data[i:j]
-        dates = dates[i:j]
-        missing_days = sparsevec(findall(ismissing, data))
-        data = coalesce.(data, zero(nonmissingtype(eltype(data))))
+        setup_calendar_data(
+            DataVector,
+            data[i:j],
+            dates[i] .. dates[j],
+            cal
+        )
     else
-        missing_days = sparsevec(zeros(Bool, length(data)))
+        setup_calendar_data(
+            DataVector,
+            data,
+            dates[1] .. dates[end],
+            cal
+        )
     end
-    
-    
-    DataVector(
+end
+
+function DataMatrix(data::AbstractMatrix, dates::ClosedInterval{Date}, cal::MarketCalendar)
+    setup_calendar_data(
+        DataMatrix,
         data,
-        missing_days,
-        dates[1] .. dates[end],
+        dates,
         cal
     )
 end
-
 function add_missing_bdays(dates, cal)
     out = Date[]
     if length(dates) == bdayscount(cal, dates[1], dates[end]) + 1
@@ -179,22 +219,11 @@ function add_missing_bdays(dates, cal)
     out
 end
 
-function dates_min_max(dates::Vector{ClosedInterval{Date}})::ClosedInterval{Date}
-    maximum(dt_min.(dates)) .. minimum(dt_max.(dates))
-end
-function dates_min_max(date1::ClosedInterval{Date}, date2::ClosedInterval{Date})::ClosedInterval{Date}
-    max(dt_min(date1), dt_min(date2)) .. min(dt_max(date1), dt_max(date2))
-end
-
-function all_dates(data::MarketData)
-    shift_dates.(pick_data.(Ref(data), Symbol.(names(data))), shift_count.(names(data)))
-end
-
 function get_missing_bdays(cal::MarketCalendar, missing_bdays::SparseVector{Bool, Int}, dates_missings::ClosedInterval{Date}, new_dates::ClosedInterval{Date})
     missing_bdays[date_range(cal, dates_missings, new_dates)]
 end
 
-function get_missing_bdays(data::DataVector, new_dates::ClosedInterval{Date})
+function get_missing_bdays(data, new_dates::ClosedInterval{Date})
     get_missing_bdays(calendar(data), data_missing_bdays(data), data_dates(data), new_dates)
 end
 
@@ -205,28 +234,25 @@ function date_range(cal::MarketCalendar, timeline_dates::ClosedInterval{Date}, n
     s:e
 end
 
-function date_range(cal::MarketCalendar, data::DataVector, dt_min::Date, dt_max::Date)
+function date_range(cal::MarketCalendar, data::CalendarData, dt_min::Date, dt_max::Date)
     date_range(cal, data_dates(data), dt_min .. dt_max)
 end
 
-function date_range(cal::MarketCalendar, data::DataVector, dates::ClosedInterval{Date})
+function date_range(cal::MarketCalendar, data::CalendarData, dates::ClosedInterval{Date})
     date_range(cal, data_dates(data), dates)
 end
 
-function Base.getindex(data::RegressionCache, dates::ClosedInterval{Date}, mssngs::SparseVector{Bool, Int})
+# , mssngs::SparseVector{Bool, Int}=spzeros(Bool, size(raw_values(data), 1))
+function Base.getindex(data::DataMatrix, dates::ClosedInterval{Date})
     new_dates = dates_min_max(data_dates(data), dates)
-    new_mssngs = get_missing_bdays(calendar(data), mssngs, dates, new_dates)
     r = date_range(calendar(data), data_dates(data), new_dates)
-    if nnz(new_mssngs) == 0
-        return data.data[r, :]
-    else
-        data.data[r[(!).(new_mssngs)], :]
-    end
+    data.data[r, :]
 end
 
 function Base.getindex(data::DataVector, dates::ClosedInterval{Date})
-    @assert dt_min(data) <= dt_min(dates) && dt_max(dates) <= dt_max(data) "Date range out of bounds"
-    data.data[date_range(calendar(data), data_dates(data), dates)] 
+    new_dates = dates_min_max(data_dates(data), dates)
+    r = date_range(calendar(data), data_dates(data), new_dates)
+    data.data[r]
 end
 
 function combine_missing_bdays(vals::SparseVector{Bool, Int}...)::SparseVector{Bool, Int}
@@ -241,18 +267,26 @@ function combine_missing_bdays(vals::Vector{SparseVector{Bool, Int}})::SparseVec
     out
 end
 
-function check_col(x::Symbol, g1, g2)
-    x ∈ g1 || x ∈ g2
+function Base.view(data::DataVector, dates::ClosedInterval{Date}, mssngs::SparseVector{Bool, Int})
+    @assert dt_min(data) <= dt_min(dates) && dt_max(dates) <= dt_max(data) "Date range out of bounds"
+    r = date_range(calendar(data), data_dates(data), dates)
+    @assert length(mssngs) == length(r) "Missing data vector is the wrong length"
+    if nnz(mssngs) == 0
+        view(data.data, r)
+    else
+        view(data.data, r[(!).(mssngs)])
+    end
 end
 
-function check_col(x::Vector{Symbol}, g1, g2)
-    all(check_col.(x, Ref(g1), Ref(g2)))
-end
-
-check_col(x::Symbol, g1) = x ∈ g1
-
-function check_col(x::Vector{Symbol}, g1)
-    any(check_col.(x, Ref(g1)))
+function Base.view(data::DataMatrix, dates::ClosedInterval{Date}, mssngs::SparseVector{Bool, Int})
+    @assert dt_min(data) <= dt_min(dates) && dt_max(dates) <= dt_max(data) "Date range out of bounds"
+    r = date_range(calendar(data), data_dates(data), dates)
+    @assert length(mssngs) == length(r) "Missing data vector is the wrong length"
+    if nnz(mssngs) == 0
+        view(data.data, r, :)
+    else
+        view(data.data, r[(!).(mssngs)], :)
+    end
 end
 
 function Base.view(data::DataVector, dates::ClosedInterval{Date})
@@ -261,16 +295,11 @@ function Base.view(data::DataVector, dates::ClosedInterval{Date})
     view(data.data, r)
 end
 
-function Base.view(data::RegressionCache, dates::ClosedInterval{Date})
+function Base.view(data::DataMatrix, dates::ClosedInterval{Date})
     @assert dt_min(data) <= dt_min(dates) && dt_max(dates) <= dt_max(data) "Date range out of bounds"
     r = date_range(calendar(data), data_dates(data), dates)
     view(data.data, r, :)
 end
-
-###########################################################
-# Access functions for multiple columns and range of dates
-# returns another data matrix
-###########################################################
 
 Base.getindex(data::NamedTuple{Names, NTuple{N, DataVector}}, col::TimelineColumn) where {Names, N} = shift(data[Symbol(col)], col.shifts)
 
@@ -278,20 +307,27 @@ function Base.getindex(data::MarketData{T, MNames, FNames}, id::T, col::Timeline
     shift(pick_data(data, id, Symbol(col)), col.shifts)
 end
 
-function Base.getindex(data::MarketData{T, MNames, FNames}, id::T, cols::Vector{TimelineColumn}=TimelineColumn.([FNames..., MNames...])) where {T, MNames, FNames}
+function Base.getindex(
+    data::MarketData{T, MNames, FNames},
+    id::T,
+    cols::Vector{TimelineColumn}=TimelineColumn.([FNames..., MNames...]),
+    allow_mssng::Type{AllowMissing{Mssng}}=AllowMissing{false},
+) where {T, MNames, FNames, Mssng}
     real_dates = dates_min_max(get_all_dates(data, id, cols))
-    data[id, real_dates, cols]
+    data[id, real_dates, cols, allow_mssng]
 end
 
 function Base.getindex(
     data::MarketData{T, MNames, FNames},
     id::T,
     dates::ClosedInterval{Date},
-    cols::Vector{TimelineColumn}=TimelineColumn.([FNames..., MNames...])
-) where {T, MNames, FNames}
+    cols::Vector{TimelineColumn}=TimelineColumn.([FNames..., MNames...]),
+    allow_mssng::Type{AllowMissing{Mssng}}=AllowMissing{false}
+) where {T, MNames, FNames, Mssng}
     out = TimelineTable(
         data,
         id,
+        allow_mssng,
         dates_min_max(get_all_dates(data, id, cols)),
         DictIndex(cols),
         sparsevec(zeros(Bool, bdayscount(calendar(data), dt_min(dates), dt_max(dates)))),
@@ -316,7 +352,7 @@ function Base.getindex(
 end
 
 function Base.getindex(
-    data::TimelineTable,
+    data::TimelineTable{false},
     dates::ClosedInterval{Date},
     col::TimelineColumn
 )
@@ -326,6 +362,18 @@ function Base.getindex(
     else
         data[col][dates][(!).(new_mssngs)]
     end
+end
+
+function Base.getindex(
+    data::TimelineTable{true},
+    dates::ClosedInterval{Date},
+    col::TimelineColumn
+)
+    new_mssngs = get_missing_bdays(calendar(data), data_missing_bdays(data), data_dates(data), dates)
+    out = data[col][dates]
+    out = allowmissing(out)
+    out[new_mssngs] .= missing
+    out
 end
 
 function Base.getindex(
@@ -344,26 +392,35 @@ function Base.getindex(
     data[dates, TimelineColumn(col)]
 end
 
-function Base.getindex(
+function Base.getproperty(
     data::TimelineTable,
-    dates::ClosedInterval{Date}
+    sym::Symbol
 )
-    TimelineTable(
-        data.parent,
-        data.id,
-        data.dates,
-        DictIndex(names(data)),
-        data.missing_bdays,
-        dates,
-    )
+    if sym == :calendar
+        getfield(getfield(data, :parent), :calendar)
+    elseif sym == :firmdata
+        getfield(getfield(data, :parent), :firmdata)
+    elseif sym == :marketdata
+        getfield(getfield(data, :parent), :marketdata)
+    else
+        getfield(data, sym)
+    end
 end
 
-function get_dates(data::TimelineTable)
-    out = listbdays(data.calendar, dt_min(data), dt_max(data))
-    if nnz(data.missing_bdays) == 0
+
+
+function get_dates(data::TimelineTable{true})
+    listbdays(calendar(data), dt_min(data), dt_max(data))
+end
+
+function get_dates(data::TimelineTable{false})
+    real_dates = dates_min_max(data_dates(data), norm_dates(data))
+    out = listbdays(calendar(data), dt_min(real_dates), dt_max(real_dates))
+    new_mssngs = get_missing_bdays(calendar(data), data_missing_bdays(data), data_dates(data), real_dates)
+    if nnz(new_mssngs) == 0
         return out
     else
-        return out[(!).(data.missing_bdays)]
+        return out[(!).(new_mssngs)]
     end
 end
 
@@ -371,10 +428,12 @@ Base.names(x::TimelineTable) = x.cols.cols
 
 Tables.istable(::Type{<:TimelineTable}) = true
 Tables.columnaccess(::Type{<:TimelineTable}) = true
-function Tables.schema(obj::TimelineTable) where {mssngs}
+function Tables.schema(obj::TimelineTable{Mssngs}) where {Mssngs}
     col_sym = Tables.columnnames(obj)
-    col_types = fill(Float64, length(col_sym))
-    col_types[1] = Date
+    col_types = vcat(
+        [Date],
+        fill(Mssngs ? Union{Float64, Missing} : Float64, length(col_sym)-1)
+    )
     Tables.Schema(col_sym, col_types)
 end
 
@@ -393,26 +452,56 @@ function Tables.getcolumn(x::TimelineTable, nm::Symbol)
     if nm == :date
         return get_dates(x)
     end
-    if nm ∈ Tables.columnanmes(x)
+    if nm ∈ Tables.columnnames(x)
         pos = findfirst(nm .== Tables.columnnames(x))
         return Tables.getcolumn(x, pos)
     end
 end
 
-function Tables.columnnames(x::MarketData)
+function Tables.columnnames(x::TimelineTable)
     vcat([:date], Symbol.(String.(names(x))))
 end
 
-
-function Base.length(data::TimelineTable)
+function Base.length(data::TimelineTable{false})
     real_dates = dates_min_max(data_dates(data), norm_dates(data))
     c = bdayscount(calendar(data), dt_min(real_dates), dt_max(real_dates)) + 1
     new_mssngs = get_missing_bdays(calendar(data), data_missing_bdays(data), data_dates(data), real_dates)
     return c - nnz(new_mssngs)
 end
 
+function Base.length(data::TimelineTable{true})
+    bdayscount(calendar(data), dt_min(data), dt_max(data)) + 1
+end
+
 function Base.length(x::DataVector)
     return length(data_missing_bdays(x)) - nnz(data_missing_bdays(x))
+end
+
+DataFrames.dropmissing(data::TimelineTable{false}) = data
+DataFrames.allowmissing(data::TimelineTable{true}) = data
+
+function DataFrames.dropmissing(data::TimelineTable{true})
+    TimelineTable(
+        parent(data),
+        data_id(data),
+        AllowMissing{false},
+        data_dates(data),
+        DictIndex(names(data)),
+        data_missing_bdays(data),
+        norm_dates(data)
+    )
+end
+
+function DataFrames.allowmissing(data::TimelineTable{false})
+    TimelineTable(
+        parent(data),
+        data_id(data),
+        AllowMissing{true},
+        data_dates(data),
+        DictIndex(names(data)),
+        data_missing_bdays(data),
+        norm_dates(data)
+    )
 end
 
 function update_dates!(
@@ -424,9 +513,9 @@ function update_dates!(
 end
 
 function update_id!(
-    data::TimelineTable{T},
+    data::TimelineTable{Mssng, T},
     id::T
-) where {T}
+) where {Mssng, T}
     if id != data.id
         data.id = id
         data.dates = dates_min_max(get_all_dates(data))
@@ -479,21 +568,16 @@ function combine_all_missing_bdays(data::TimelineTable)
     out
 end
 
-raw_values(x::DataVector) = x.data
-data_dates(x::DataVector) = x.dates
-data_missing_bdays(x::DataVector) = x.missing_bdays
-
-raw_values(x::RegressionCache) = x.data
-data_dates(x::RegressionCache) = x.dates
-data_missing_bdays(x::RegressionCache) = x.missing_bdays
+raw_values(x::CalendarData) = x.data
+data_dates(x::CalendarData) = x.dates
+data_missing_bdays(x::CalendarData) = x.missing_bdays
 
 data_dates(x::TimelineTable) = x.dates
 data_missing_bdays(x::TimelineTable) = x.missing_bdays
 norm_dates(x::TimelineTable) = x.req_dates
 parent(data::TimelineTable) = data.parent
 
-calendar(x::DataVector) = x.calendar
-calendar(x::RegressionCache) = x.calendar
+calendar(x::CalendarData) = x.calendar
 calendar(x::MarketData) = x.calendar
 calendar(x::TimelineTable) = calendar(parent(x))
 
@@ -523,16 +607,14 @@ function Base.show(io::IO, data::MarketData{T, MNames, FNames}) where {T, MNames
 end
 
 dt_min(x::ClosedInterval{Date}) = x.left
-dt_min(x::TimelineTable) = x.req_dates.left
-dt_min(x::DataVector) = x.dates.left
-dt_min(x::RegressionCache) = x.dates.left
+dt_min(x::TimelineTable) = dt_min(norm_dates(x))
+dt_min(x::CalendarData) = dt_min(data_dates(x))
 dt_max(x::ClosedInterval{Date}) = x.right
-dt_max(x::TimelineTable) = x.req_dates.right
-dt_max(x::DataVector) = x.dates.right
-dt_max(x::RegressionCache) = x.dates.right
+dt_max(x::TimelineTable) = dt_max(norm_dates(x))
+dt_max(x::CalendarData) = dt_max(data_dates(x))
 
-cal_dt_min(x::DataVector) = cal_dt_min(calendar(x))
-cal_dt_max(x::DataVector) = cal_dt_max(calendar(x))
+cal_dt_min(x::CalendarData) = cal_dt_min(calendar(x))
+cal_dt_max(x::CalendarData) = cal_dt_max(calendar(x))
 cal_dt_min(x::TimelineTable) = cal_dt_min(calendar(x))
 cal_dt_max(x::TimelineTable) = cal_dt_max(calendar(x))
 cal_dt_min(x::MarketData) = cal_dt_min(calendar(x))

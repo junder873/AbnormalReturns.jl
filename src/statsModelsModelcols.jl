@@ -29,10 +29,10 @@ function shift_dates(data::DataVector, shifts::Int)
     obj_start_to_cal_start = bdayscount(data.calendar, dt_min(data), cal_dt_min(data)) # -1
     dt_min_change = max(shifts, obj_start_to_cal_start) # 2 # -1
     dt_max_change = min(shifts, obj_end_to_cal_end) # 1 # -2
-    dt_min = advancebdays(data.calendar, dt_min(data), dt_min_change) # = x.dates.left + 2 # = x.datesleft - 1 = cal.dtmin
-    dt_max = advancebdays(data.calendar, dt_max(data), dt_max_change) # = x.dates.right + 1 = cal.dtend # x.dates.right - 2
+    dtmin = advancebdays(data.calendar, dt_min(data), dt_min_change) # = x.dates.left + 2 # = x.datesleft - 1 = cal.dtmin
+    dtmax = advancebdays(data.calendar, dt_max(data), dt_max_change) # = x.dates.right + 1 = cal.dtend # x.dates.right - 2
 
-    dt_min .. dt_max
+    dtmin .. dtmax
 end
 
 
@@ -65,7 +65,7 @@ function StatsModels.modelcols(terms::MatrixTerm, data::TimelineTable)
     reduce(hcat, modelcols.(terms.terms, Ref(data)))
 end
 
-StatsModels.modelcols(t::ContinuousTerm, data::TimelineTable)::Vector{Float64} = data[:, t.sym]
+StatsModels.modelcols(t::ContinuousTerm, data::TimelineTable{Mssng}) where {Mssng} = data[:, t.sym]
 function StatsModels.modelcols(ft::FunctionTerm{Fo, Fa, Names}, data::TimelineTable) where {Fo,Fa,Names}
     ft.fanon.((data[:, n] for n in Names)...)
 end
@@ -74,10 +74,22 @@ function StatsModels.modelcols(t::InteractionTerm, data::TimelineTable)
     StatsModels.row_kron_insideout(*, (modelcols(term, data) for term in t.terms)...)
 end
 
-function StatsModels.modelcols(ll::StatsModels.LeadLagTerm{<:Any, F}, data::TimelineTable) where F
-    #println(F.instance)
+function StatsModels.modelcols(ll::StatsModels.LeadLagTerm{<:Any, F}, data::TimelineTable{Mssngs}) where {F, Mssngs}
     data[:, F.instance(ll.term.sym, ll.nsteps)]
 end
+
+datavector_modelcols(t::ContinuousTerm, data::TimelineTable) = data[t.sym]
+function datavector_modlecols(t::StatsModels.LeadLagTerm{<:Any, F}, data::TimelineTable)  where {F, Mssngs}
+    data[F.instance(ll.term.sy, ll.nsteps)]
+end
+function datavector_modelcols(t::AbstractTerm, data::TimelineTable)
+    DataVector(
+            modelcols(t, data),
+            data_dates(data),
+            calendar(data)
+    )
+end
+
 
 """
 These are largely copied from StatsModels, I just am returning a TimelineColumn and have a special condition

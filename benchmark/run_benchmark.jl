@@ -13,19 +13,18 @@ df_events = CSV.File(joinpath("data", "event_dates.csv")) |> DataFrame
 @time data = MarketData(df_mkt, df_firm; id_col=:firm_id)
 # First run: 38.816633 seconds (20.05 M allocations: 12.740 GiB, 44.66% gc time, 20.50% compilation time)
 # Second run: 18.013269 seconds (629.12 k allocations: 11.719 GiB, 16.72% gc time)
-
 ##
 df_firm = nothing
 df_mkt = nothing
 GC.gc()
 ##
-@time @chain df_events begin
+@time df_temp = @chain df_events begin
     @transform(:reg_mkt = AbnormalReturns.vector_reg(data, :firm_id, :est_window_start, :est_window_end, @formula(ret ~ mkt)),)
     @transform(:reg_ffm = AbnormalReturns.vector_reg(data, :firm_id, :est_window_start, :est_window_end, @formula(ret ~ mkt + smb + hml + umd)),)
-    # @transform(
-    #     :bhar_mkt = AbnormalReturns.bhar(data, :firm_id, :event_window_start, :event_window_end, :reg_mkt),
-    #     :bhar_ffm = AbnormalReturns.bhar(data, :firm_id, :event_window_start, :event_window_end, :reg_ffm),
-    # )
+    @transform(
+        :bhar_mkt = AbnormalReturns.bhar(data, :firm_id, :event_window_start, :event_window_end, :reg_mkt),
+        :bhar_ffm = AbnormalReturns.bhar(data, :firm_id, :event_window_start, :event_window_end, :reg_ffm),
+    )
     @rtransform(
         :var_mkt = var(:reg_mkt),
         :var_ffm = var(:reg_ffm),
@@ -34,21 +33,17 @@ GC.gc()
     )
 end
 # 601.901257 seconds (412.12 M allocations: 52.929 GiB, 95.80% gc time, 0.24% compilation time)
-# 65.207394 seconds (220.15 M allocations: 42.688 GiB, 59.49% gc time, 0.12% compilation time)
+# 19.754202 seconds (38.11 M allocations: 4.558 GiB, 62.57% gc time, 1.71% compilation time)
 
 ##
 
 @time df_test = @chain df_events[1:1000000, :] begin
-    @transform(:reg = AbnormalReturns.vector_reg(data, :firm_id, :est_window_start, :est_window_end, @formula(ret ~ 1 + mkt + smb + hml + umd); minobs=1))
+    @transform(:reg = AbnormalReturns.vector_reg(data, :firm_id, :est_window_start, :est_window_end, @formula(ret ~ 1 + mkt + smb + hml + umd); minobs=0.8))
 end
 ##
 
-GC.enable(false)
-GC.enable(true)
-GC.gc()
-##
 ids = df_events.firm_id
-temp_f = @formula(ret ~ 1 + mkt + smb + hml + umd)
+temp_f = @formula(ret ~ 1 + lag(mkt) + smb + hml + umd)
 cols = AbnormalReturns.internal_termvars(temp_f)
 sch = apply_schema(temp_f, schema(temp_f, data))
 cache = AbnormalReturns.create_pred_matrix(data[ids[1]], sch)

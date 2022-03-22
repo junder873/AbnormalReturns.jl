@@ -59,8 +59,6 @@ function BasicReg(
     end
 
     coef = cholesky!(Symmetric(pred' * pred)) \ (pred' * resp)
-    rss = calc_rss(resp, pred, coef)
-    tss = calc_tss(resp)
 
     BasicReg(
         length(resp),
@@ -68,8 +66,8 @@ function BasicReg(
         coef,
         xnames,
         yname,
-        tss,
-        rss,
+        calc_tss(resp),
+        calc_rss(resp, pred, coef),
         save_residuals ? resp - pred * coef : nothing
     )
 end

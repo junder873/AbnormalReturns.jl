@@ -13,6 +13,9 @@ df_events = CSV.File(joinpath("data", "event_dates.csv")) |> DataFrame
 @time data = MarketData(df_mkt, df_firm; id_col=:firm_id)
 # First run R5 3600: 29.455642 seconds (32.05 M allocations: 13.431 GiB, 7.98% gc time, 38.13% compilation time)
 # Second run R5 3600: 17.942238 seconds (669.24 k allocations: 11.774 GiB, 11.31% gc time)
+# First run i7 6700: 37.776454 seconds (32.06 M allocations: 13.430 GiB, 30.23% gc time, 32.16% compilation time)
+# Second run i7 6700: 18.069534 seconds (669.95 k allocations: 11.774 GiB, 15.21% gc time)
+
 ##
 df_firm = nothing
 df_mkt = nothing
@@ -34,6 +37,8 @@ GC.gc()
 end
 # First run R5 3600: 19.867720 seconds (63.84 M allocations: 5.861 GiB, 13.96% gc time, 52.57% compilation time)
 # Second run R5 3600: 8.928954 seconds (37.73 M allocations: 4.539 GiB, 17.06% gc time, 0.94% compilation time)
+# First run i7 6700: 33.919134 seconds (64.13 M allocations: 5.936 GiB, 45.39% gc time, 65.25% compilation time)
+# Second run i7 6700: 19.343996 seconds (37.73 M allocations: 4.602 GiB, 62.63% gc time, 0.44% compilation time)
 
 ##
 

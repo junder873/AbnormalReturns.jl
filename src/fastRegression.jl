@@ -1,3 +1,4 @@
+
 struct BasicReg{L,R} <: RegressionModel
     nobs::Int
     formula::FormulaTerm{L,R}
@@ -46,13 +47,40 @@ function calc_rss(resp, pred, coef)
     end
     out
 end
+"""
+    function BasicReg(
+        resp::AbstractVector{Float64},
+        pred::AbstractMatrix{Float64},
+        yname::String,
+        xnames::Vector{String},
+        f::FormulaTerm{L,R};
+        save_residuals::Bool=false,
+        minobs::Int=1
+    )::BasicReg{L,R} where {L,R}
+
+## Arguments
+- resp::AbstractVector{Float64}: The "Y" or response in a linear regression
+- pred::AbstractMatrix{Float64}: The "X" matrix in a linear regression
+- yname::String: The name of the response variable
+- xnames::Vector{String}: The names of the prediction variables
+- f::FormulaTerm{L,R}: A StatsModels.jl formula, saved in the resulting struct
+- save_residuals::Bool=false: Whether or not to save the vector of residuals from
+    the regression. Note for large numbers of regressions this can significantly slow
+    down the speed
+- minobs::Int=1: The minimum length of the response vector for the regression to
+    run. The regression will also not run if the length of the response vector is
+    less than or equal to the number of columns in the prediction matrix.
+
+BasicReg is an intentionally simplistic linear regression. It also attempts to produce
+a minimum number of allocations if views of vectors are passed.
+"""
 function BasicReg(
     resp::AbstractVector{Float64},
     pred::AbstractMatrix{Float64},
     yname::String,
     xnames::Vector{String},
     f::FormulaTerm{L,R};
-    save_residuals=false,
+    save_residuals::Bool=false,
     minobs::Int=1
 )::BasicReg{L,R} where {L,R}
     if length(resp) <= size(pred, 2) || length(resp) < minobs
@@ -75,8 +103,6 @@ end
 
 function create_pred_matrix(data::TimelineTable{true}, sch)
     # This allows missing to make sure all dates are in the data
-    # it is not necessary to include missing bdays since the
-    # timelinetable already has the same information
 
     mat = modelcols(sch.rhs, data)
     DataMatrix(
@@ -95,9 +121,9 @@ function quick_reg(
 ) where {L,R,V<:Real}
 
     minobs = if minobs < 1
-        Int(floor((bdayscount(data.calendar, dt_min(data), dt_max(data)) + 1) * minobs))
+        Int(ceil((bdayscount(calendar(data), dt_min(data), dt_max(data)) + 1) * minobs))
     else
-        Int(floor(minobs))
+        Int(ceil(minobs))
     end
 
     if !StatsModels.omitsintercept(f) & !StatsModels.hasintercept(f)
@@ -120,7 +146,7 @@ function quick_reg(
     )
 end
 
-function fill_vector_reg(
+function fill_vector_reg!(
     parent_data::MarketData{T},
     iters::Dict{T, Vector{IterateOutput}},
     out_vector::Vector{BasicReg{L,R}},
@@ -179,7 +205,7 @@ function vector_reg(
     )
     out = fill(BasicReg(0, f), length(ids))
     iter_dict = construct_id_dict(ids, date_mins, date_maxs, calendar(parent_data); minobs)
-    fill_vector_reg(
+    fill_vector_reg!(
         parent_data,
         iter_dict,
         out,

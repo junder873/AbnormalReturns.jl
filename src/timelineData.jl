@@ -33,14 +33,45 @@ struct AllowMissing{mssng} end
 
 mutable struct TimelineTable{Mssng, T, MNames, FNames, N1, N2} <: Tables.AbstractColumns
     parent::MarketData{T, MNames, FNames, N1, N2}
-    id::T
-    allow_missing::Type{AllowMissing{Mssng}}
+    id::T# The current ID
+    allow_missing::Type{AllowMissing{Mssng}}# Whether the functions return Vector{Union{Missing, Float64}} or Vector{Float64}
     dates::ClosedInterval{Date}# actual returnable dates that guarentees a square matrix
-    cols::DictIndex
-    missing_bdays::SparseVector{Bool, Int}
+    cols::DictIndex# Index of column names, allows for creating lag/lead columns
+    missing_bdays::SparseVector{Bool, Int}# missing days between the dates
     req_dates::ClosedInterval{Date}# dates requested, matters for calculating missing obs
 end
 
+"""
+    function MarketData(
+        df_market,
+        df_firms;
+        date_col_market=:date,
+        date_col_firms=:date,
+        id_col=:permno,
+        valuecols_market=nothing,
+        valuecols_firms=nothing
+    )
+
+## Arguments
+- df_market: A Tables.jl compatible source that stores market data, indexed by date.
+    The dates must be a unique set. The column name for the date column is specified
+    by the keyword argument "date_col_market"
+- df_firms: A Tables.jl compatible source that stores firm data. Each firm must have a
+    unique set of dates. The column name for the date column is specified
+    by the keyword argument "date_col_firms" and the firm ID column is specified
+    by the keyword argument "id_col"
+- valuecols_market=nothing and valuecols_firms: If left as nothing, all other columns in `df_market` are
+    used as the value columns. These are the columns that are stored in the resulting
+    dataset. Otherwise a vector of Symbol or String specifying column names.
+
+MarketData is the main data storage structure. Data is stored for each firm in
+a Dict, where the data itself is a NamedTuple (names corresponding to column names,
+such as "ret"), and the keys for the Dict corresponding to firm IDs. The MarketData
+struct also stores overall market data and a calendar of dates.
+
+Any firm data must have a corresponding market data date, so there cannot be a
+firm return if there is not a market return on that date.
+"""
 function MarketData(
     df_market,
     df_firms;

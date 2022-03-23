@@ -49,9 +49,10 @@ function bh_return(vals::AbstractVector{Union{Missing, Float64}})
 end
 
 function bh_return(pred::AbstractMatrix, coef)
+    #@assert size(pred, 2) == length(coef) "Got Matrix of size $(size(pred)) and coefficients of $coef $pred"
     out = 1.0
-    @simd for i in 1:size(pred, 2)
-        @inbounds out *= (fast_pred(pred, coef, i) + 1)
+    @simd for i in 1:size(pred, 1)
+        out *= (fast_pred(pred, coef, i) + 1)
     end
     out - 1
 end
@@ -61,9 +62,10 @@ bhar(resp, pred, coef) = bh_return(resp) - bh_return(pred, coef)
 bhar(x::AbstractVector, y::AbstractVector) = bh_return(x) - bh_return(y)
 
 function cumulative_return(pred::AbstractMatrix, coef)
+    #@assert size(pred, 2) == length(coef) "Got Matrix of size $(size(pred)) and coefficients of $coef $pred"
     out = 0.0
-    @simd for i in 1:size(pred, 2)
-        @inbounds out += fast_pred(pred, coef, i)
+    @simd for i in 1:size(pred, 1)
+        out += fast_pred(pred, coef, i)
     end
     out
 end

@@ -19,9 +19,9 @@ function construct_id_dict(
 ) where {T, V<:Real}
     @assert length(ids) == length(date_starts) == length(date_ends) "All Vectors must be of same length"
     out_minobs = if minobs < 1
-        bdayscount(cal, date_starts, date_ends) .+ 1
+        Int.(floor.((bdayscount(cal, date_starts, date_ends) .+ isbday(cal, date_ends)) * minobs))
     else
-        fill(Int(floor(minobs)), length(ids))
+        fill(Int(ceil(minobs)), length(ids))
     end
     out = Dict{T, Vector{IterateOutput}}()
     sizehint!(out, length(ids))

@@ -172,7 +172,7 @@ function DataVector(data::AbstractVector, dates::AbstractVector{Date}, cal::Mark
         if all(ismissing.(data))
             return DataVector(
                 zeros(nonmissingtype(eltype(data)), 1),
-                SparseVector([1], [true]),
+                sparsevec([1], [true]),
                 dates[1] .. dates[1],
                 cal
             )
@@ -442,7 +442,7 @@ function Tables.getcolumn(x::TimelineTable, i::Int)
     if i == 1
         get_dates(x)
     else
-        Tables.getcolumn(x, x.lookup[i-1])# subtract 1 since date is the first column produced
+        Tables.getcolumn(x, x.cols.lookup[i-1])# subtract 1 since date is the first column produced
     end
 end
 function Tables.getcolumn(x::TimelineTable, nm::TimelineColumn)
@@ -464,13 +464,13 @@ end
 
 function Base.length(data::TimelineTable{false})
     real_dates = dates_min_max(data_dates(data), norm_dates(data))
-    c = bdayscount(calendar(data), dt_min(real_dates), dt_max(real_dates)) + 1
+    c = bdayscount(calendar(data), dt_min(real_dates), dt_max(real_dates)) + isbday(calendar(data), dt_max(real_dates))
     new_mssngs = get_missing_bdays(calendar(data), data_missing_bdays(data), data_dates(data), real_dates)
     return c - nnz(new_mssngs)
 end
 
 function Base.length(data::TimelineTable{true})
-    bdayscount(calendar(data), dt_min(data), dt_max(data)) + 1
+    bdayscount(calendar(data), dt_min(data), dt_max(data)) + isbday(calendar(data), dt_max(data))
 end
 
 function Base.length(x::DataVector)
@@ -560,7 +560,8 @@ function combine_all_missing_bdays(data::TimelineTable)
         )
     )
     for col in names(data)
-        mssngs = data_missing_bdays(data[col])
+        mssngs = data_missing_bdays(data[Symbol(col)]) # get based on symbol here since if there are no missings
+        # then skip the next step, if there are missings then fetch the new vector and adjust
         if nnz(mssngs) > 0
             out = out .| get_missing_bdays(data[col], data_dates(data))
         end

@@ -95,7 +95,7 @@ function quick_reg(
 ) where {L,R,V<:Real}
 
     minobs = if minobs < 1
-        (bdayscount(data.calendar, dt_min(data), dt_max(data)) + 1) * minobs
+        Int(floor((bdayscount(data.calendar, dt_min(data), dt_max(data)) + 1) * minobs))
     else
         Int(floor(minobs))
     end
@@ -142,6 +142,7 @@ function fill_vector_reg(
                 x = view(resp, cur_dates)
                 y = view(cache, cur_dates)
             else
+                new_mssngs = get_missing_bdays(data, cur_dates)
                 x = view(resp, cur_dates, new_mssngs)
                 y = view(cache, cur_dates, new_mssngs)
             end
@@ -172,7 +173,6 @@ function vector_reg(
         f = FormulaTerm(f.lhs, InterceptTerm{true}() + f.rhs)
     end
     sch = apply_schema(f, schema(f, parent_data))
-    data = parent_data[ids[1], internal_termvars(sch.rhs), AllowMissing{true}]
     cache = create_pred_matrix(
         parent_data[ids[1], internal_termvars(sch.rhs), AllowMissing{true}],
         sch

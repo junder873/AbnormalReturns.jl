@@ -30,14 +30,14 @@ function Statistics.std(
 end
 
 function bh_return(vals::AbstractVector{Float64})
-    out = 0.0
+    out = 1.0
     @simd for x in vals
         out *= (1 + x)
     end
     out - 1
 end
 function bh_return(vals::AbstractVector{Union{Missing, Float64}})
-    out = 0.0
+    out = 1.0
     @simd for x in vals
         if ismissing(x)
             out *= 1
@@ -49,7 +49,7 @@ function bh_return(vals::AbstractVector{Union{Missing, Float64}})
 end
 
 function bh_return(pred::AbstractMatrix, coef)
-    out = 0.0
+    out = 1.0
     @simd for i in 1:size(pred, 2)
         @inbounds out *= (fast_pred(pred, coef, i) + 1)
     end
@@ -140,9 +140,9 @@ function pred_diff(
     end
     # since the values in a continuous term of mean/var/min/max are not used here,
     # this just creates a schema from the available values without
-    sch = apply_schema(f, schema(f, data))
+
     resp, pred = modelcols(sch, data)
-    fun(resp, predict(rr, pred))
+    fun(resp, pred, coef(rr))
 end
 
 function fill_vector_pred!(
@@ -166,6 +166,7 @@ function fill_vector_pred!(
                 x = view(resp, cur_dates)
                 y = view(cache, cur_dates)
             else
+                new_mssngs = get_missing_bdays(data, cur_dates)
                 x = view(resp, cur_dates, new_mssngs)
                 y = view(cache, cur_dates, new_mssngs)
             end

@@ -21,18 +21,30 @@ a lag should return a value from before 1/1/2021 if the data exists).
 
 function shift_dates(data::DataVector, shifts::Int)
     if shifts == 0
-        return data_dates(data)
+        data_dates(data)
+    elseif shifts > 0 # lag
+        if shifts > bdayscount(calendar(data), dt_max(data), cal_dt_max(data))
+            advancebdays(calendar(data), dt_min(data), shifts) .. cal_dt_max(data)
+        else
+            advancebdays(calendar(data), dt_min(data), shifts) .. advancebdays(calendar(data), dt_max(data), shifts)
+        end
+    else # lead
+        if shifts < bdayscount(calendar(data), dt_min(data), cal_dt_min(data))
+            cal_dt_min(data) .. advancebdays(calendar(data), dt_min(data), shifts)
+        else
+            advancebdays(calendar(data), dt_min(data), shifts) .. advancebdays(calendar(data), dt_max(data), shifts)
+        end
     end
 
-    # shifts = 2 # shifts = -2
-    obj_end_to_cal_end = bdayscount(data.calendar, dt_max(data), cal_dt_max(data)) # 1
-    obj_start_to_cal_start = bdayscount(data.calendar, dt_min(data), cal_dt_min(data)) # -1
-    dt_min_change = max(shifts, obj_start_to_cal_start) # 2 # -1
-    dt_max_change = min(shifts, obj_end_to_cal_end) # 1 # -2
-    dtmin = advancebdays(data.calendar, dt_min(data), dt_min_change) # = x.dates.left + 2 # = x.datesleft - 1 = cal.dtmin
-    dtmax = advancebdays(data.calendar, dt_max(data), dt_max_change) # = x.dates.right + 1 = cal.dtend # x.dates.right - 2
+    # # shifts = 2 # shifts = -2
+    # obj_end_to_cal_end = bdayscount(data.calendar, dt_max(data), cal_dt_max(data)) # 1
+    # obj_start_to_cal_start = bdayscount(data.calendar, dt_min(data), cal_dt_min(data)) # -1
+    # dt_min_change = max(shifts, obj_start_to_cal_start) # 2 # -1
+    # dt_max_change = min(shifts, obj_end_to_cal_end) # 1 # -2
+    # dtmin = advancebdays(data.calendar, dt_min(data), dt_min_change) # = x.dates.left + 2 # = x.datesleft - 1 = cal.dtmin
+    # dtmax = advancebdays(data.calendar, dt_max(data), dt_max_change) # = x.dates.right + 1 = cal.dtend # x.dates.right - 2
 
-    dtmin .. dtmax
+    # dtmin .. dtmax
 end
 
 
@@ -45,7 +57,7 @@ function shift(data::DataVector, shifts::Int)
     r = if len == length(raw_values(data))
         1:length(raw_values(data))
     else
-        if shifts < 0
+        if shifts > 0
             1:len
         else
             1+(length(raw_values(data)) - len):length(raw_values(data))

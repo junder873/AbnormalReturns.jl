@@ -81,7 +81,7 @@ function BasicReg(
     xnames::Vector{String},
     f::FormulaTerm{L,R};
     save_residuals::Bool=false,
-    minobs::Int=1
+    minobs=1
 )::BasicReg{L,R} where {L,R}
     if length(resp) <= size(pred, 2) || length(resp) < minobs
         return BasicReg(length(resp), f)
@@ -101,6 +101,14 @@ function BasicReg(
     )
 end
 
+function create_pred_matrix(data::IterateTimelineTable, sch)
+    id = first(data)[1]
+    create_pred_matrix(
+        parent(data)[id, internal_termvars(sch.rhs), AllowMissing{true}],
+        sch
+    )
+end
+
 function create_pred_matrix(data::TimelineTable{true}, sch)
     # This allows missing to make sure all dates are in the data
 
@@ -112,19 +120,41 @@ function create_pred_matrix(data::TimelineTable{true}, sch)
     )
 end
 
+"""
+    quick_reg(
+        data::TimelineTable{false},
+        f::FormulaTerm;
+        minobs::Real=0.8,
+        save_residuals::Bool=false
+    )
 
+    quick_reg(
+        data::IterateTimelineTable,
+        f::FormulaTerm;
+        minobs::Real=0.8,
+        save_residuals::Bool=false
+    )
+
+Calculates a linear regression for the supplied data based on the formula (formula from StatsModels.jl).
+Unless the formula explicitly excludes the intercept (i.e., `@formula(y ~ 0 + x)`), an intercept is added.
+
+If `data` is of the type `IterateTimelineTable`, then the formula is applied to each `TimelineTable` in an
+optimized way and returns a `Vector{BasicReg}`.
+
+## Arguments
+- `minobs::Real`: The minimum number of observations to return a completed regression. If less than 1,
+    the value is used as a percentage relative to the total number of business days in the time period.
+    Therefore, the default of 0.8 corresponds to at least 80% of the business days over the time period have values.
+- `save_residuals::Bool=false`: Whether to save the residuals into `BasicReg`, This can have significant performance implications.
+
+
+"""
 function quick_reg(
     data::TimelineTable{false},# only works if no missing data for multiplication
-    f::FormulaTerm{L,R};
+    f::FormulaTerm;
     minobs::V=0.8,
     save_residuals::Bool=false
-) where {L,R,V<:Real}
-
-    minobs = if minobs < 1
-        Int(ceil((bdayscount(calendar(data), dt_min(data), dt_max(data)) + 1) * minobs))
-    else
-        Int(ceil(minobs))
-    end
+) where {V<:Real}
 
     if !StatsModels.omitsintercept(f) & !StatsModels.hasintercept(f)
         f = FormulaTerm(f.lhs, InterceptTerm{true}() + f.rhs)
@@ -142,27 +172,27 @@ function quick_reg(
         xnames,
         f;
         save_residuals,
-        minobs
+        minobs=adjust_minobs(minobs, calendar(data), norm_dates(data))
     )
 end
 
 function fill_vector_reg!(
-    parent_data::MarketData{T},
-    iters::Dict{T, Vector{IterateOutput}},
     out_vector::Vector{BasicReg{L,R}},
+    iter_data::IterateTimelineTable{T},
     cache::DataMatrix,
-    sch::FormulaTerm{L2,R2},
+    sch::FormulaTerm,
     f::FormulaTerm{L,R};
-    save_residuals::Bool=false
-) where {T, L, R, L2, R2}
-    @assert validate_iterator(iters, out_vector) "Length of out_vector does not match the number of indexes in the iterator"
+    save_residuals::Bool=false,
+    minobs=0.8
+) where {T, L, R}
+    @assert validate_iterator(iter_data, out_vector) "Length of out_vector does not match the number of indexes in the iterator"
     cols = internal_termvars(sch)
     yname, xnames = coefnames(sch)
     
-    Threads.@threads for u_id in keys(iters) |> collect
-        data = parent_data[u_id, cols, AllowMissing{true}]
+    Threads.@threads for (u_id, iter_indexes) in iter_data
+        data = parent(iter_data)[u_id, cols, AllowMissing{true}]
         resp = datavector_modelcols(int_lhs(sch), data)
-        for iter in iters[u_id]
+        for iter in iter_indexes
             cur_dates = dates_min_max(data_dates(data), iter_dates(iter))
             if nnz(data_missing_bdays(data)) == 0
                 x = view(resp, cur_dates)
@@ -179,40 +209,33 @@ function fill_vector_reg!(
                 xnames,
                 f;
                 save_residuals,
-                minobs=iter_minobs(iter)
+                minobs=adjust_minobs(minobs, calendar(parent(data)), iter_dates(iter))
             )
         end
     end
     out_vector
 end
 
-function vector_reg(
-    parent_data::MarketData{T},
-    ids::AbstractVector{T},
-    date_mins::AbstractVector{Date},
-    date_maxs::AbstractVector{Date},
-    f::FormulaTerm{L,R};
+function quick_reg(
+    data::IterateTimelineTable,
+    f::FormulaTerm;
     minobs::V=0.8,
     save_residuals::Bool=false
-) where {T,L,R,V<:Real}
+) where {V<:Real}
     if !StatsModels.omitsintercept(f) & !StatsModels.hasintercept(f)
         f = FormulaTerm(f.lhs, InterceptTerm{true}() + f.rhs)
     end
-    sch = apply_schema(f, schema(f, parent_data))
-    cache = create_pred_matrix(
-        parent_data[ids[1], internal_termvars(sch.rhs), AllowMissing{true}],
-        sch
-    )
-    out = fill(BasicReg(0, f), length(ids))
-    iter_dict = construct_id_dict(ids, date_mins, date_maxs, calendar(parent_data); minobs)
+    sch = apply_schema(f, schema(f, parent(data)))
+    cache = create_pred_matrix(data, sch)
+    out = fill(BasicReg(0, f), total_length(data))
     fill_vector_reg!(
-        parent_data,
-        iter_dict,
         out,
+        data,
         cache,
         sch,
         f;
-        save_residuals
+        save_residuals,
+        minobs
     )
 end
 

@@ -1,4 +1,4 @@
-using DataFrames, CSV, DataFramesMeta, Dates
+using DataFrames, CSV, DataFramesMeta, Dates, BenchmarkTools, Cthulhu
 using Revise
 using AbnormalReturns
 
@@ -9,21 +9,26 @@ df_mkt = CSV.File(joinpath("data", "mkt_ret.csv")) |> DataFrame
 df_events = CSV.File(joinpath("data", "event_dates.csv")) |> DataFrame
 
 ##
-
-@time data = MarketData(df_mkt, df_firm; id_col=:firm_id)
-# First run: 38.816633 seconds (20.05 M allocations: 12.740 GiB, 44.66% gc time, 20.50% compilation time)
-# Second run: 18.013269 seconds (629.12 k allocations: 11.719 GiB, 16.72% gc time)
+@time data = MarketData(df_mkt, df_firm; id_col=:firm_id, valuecols_firms=[:ret])
+# First run R5 3600: 29.455642 seconds (32.05 M allocations: 13.431 GiB, 7.98% gc time, 38.13% compilation time)
+# Second run R5 3600: 17.942238 seconds (669.24 k allocations: 11.774 GiB, 11.31% gc time)
+# First run i7 6700: 37.776454 seconds (32.06 M allocations: 13.430 GiB, 30.23% gc time, 32.16% compilation time)
+# Second run i7 6700: 18.069534 seconds (669.95 k allocations: 11.774 GiB, 15.21% gc time)
 
 ##
+df_firm = nothing
+df_mkt = nothing
+GC.gc()
 
-@time @chain df_events begin
+##
+@time df_temp = @chain df_events begin
+    @transform(:reg_mkt = quick_reg(data[:firm_id, :est_window_start .. :est_window_end], @formula(ret ~ mkt)),)
+    @transform(:reg_ffm = quick_reg(data[:firm_id, :est_window_start .. :est_window_end], @formula(ret ~ mkt + smb + hml + umd)),)
     @transform(
-        :reg_mkt = AbnormalReturns.vector_reg(data, :firm_id, :est_window_start, :est_window_end, @formula(ret ~ mkt)),
-        :reg_ffm = AbnormalReturns.vector_reg(data, :firm_id, :est_window_start, :est_window_end, @formula(ret ~ mkt + smb + hml + umd)),
-    )
-    @transform(
-        :bhar_mkt = AbnormalReturns.bhar(data, :firm_id, :event_window_start, :event_window_end, :reg_mkt),
-        :bhar_ffm = AbnormalReturns.bhar(data, :firm_id, :event_window_start, :event_window_end, :reg_ffm),
+        :bhar_mkt = AbnormalReturns.bhar(data[:firm_id, :est_window_start .. :est_window_end], :reg_mkt),
+        :bhar_ffm = AbnormalReturns.bhar(data[:firm_id, :est_window_start .. :est_window_end], :reg_ffm),
+        # :bhar_simple = bhar(data[:firm_id, :est_window_start .. :est_window_end], ^(:ret), ^(:mkt)),
+        # :car_simple = car(data[:firm_id, :est_window_start .. :est_window_end], ^(:ret), ^(:mkt))
     )
     @rtransform(
         :var_mkt = var(:reg_mkt),
@@ -32,67 +37,62 @@ df_events = CSV.File(joinpath("data", "event_dates.csv")) |> DataFrame
         :beta = beta(:reg_mkt),
     )
 end
-# 601.901257 seconds (412.12 M allocations: 52.929 GiB, 95.80% gc time, 0.24% compilation time)
+# First run R5 3600: 19.867720 seconds (63.84 M allocations: 5.861 GiB, 13.96% gc time, 52.57% compilation time)
+# Second run R5 3600: 8.928954 seconds (37.73 M allocations: 4.539 GiB, 17.06% gc time, 0.94% compilation time)
+# First run i7 6700: 33.919134 seconds (64.13 M allocations: 5.936 GiB, 45.39% gc time, 65.25% compilation time)
+# Second run i7 6700: 19.343996 seconds (37.73 M allocations: 4.602 GiB, 62.63% gc time, 0.44% compilation time)
 
 ##
 
-@time AbnormalReturns.vector_reg(data, df_events.firm_id, df_events.est_window_start, df_events.est_window_end, @formula(ret ~ mkt + smb + hml + umd))
 
-##
-
-function update_timeline_table(data::AbnormalReturns.TimelineTable{Mssng, T}, id::T, dates::ClosedInterval{Date}) where {Mssng, T}
-    data.firmdata = data.parent.firmdata[id]
-    data.dates = dates
-    data
+cols = TimelineColumn.([:ret, :mkt, :smb, :hml, :umd])
+@time @chain df_events[1:1000000, :] begin
+    @rtransform(:reg = quick_reg(data[:firm_id, :est_window_start .. :est_window_end, cols], @formula(ret ~ mkt + smb + hml + umd)),)
 end
+# Run R5 3600: 64.389570 seconds (370.13 M allocations: 88.340 GiB, 15.36% gc time, 0.14% compilation time)
 
-function get_all_items(parent_data::MarketData{T}, ids::Vector{T}, date_starts::Vector{Date}, date_ends::Vector{Date}) where {T}
-    data = parent_data[ids[1], date_starts[1] .. date_ends[1], :]
-    out = zeros(length(ids))
-    for i in 1:length(ids)
-        update_timeline_table(data, ids[i], date_starts[i] .. date_ends[i])
-        @views x = data[:, :ret]
-        out[i] = sum(x)
-    end
-    out
+##
+
+@time @chain df_events[1:1000000, :] begin
+    @transform(:reg = quick_reg(data[:firm_id, :est_window_start .. :est_window_end], @formula(ret ~ mkt + smb + hml + umd)),)
 end
-
-
-
-@time get_all_items(data,  df_events.firm_id, df_events.est_window_start, df_events.est_window_end)
-
+# Run R5 3600: 2.824239 seconds (8.57 M allocations: 1.336 GiB, 1.89% compilation time)
 ##
-
-function get_all_items2(parent_data::MarketData{T}, ids::Vector{T}, date_starts::Vector{Date}, date_ends::Vector{Date}) where {T}
-    out = zeros(length(ids))
-    for i in 1:length(ids)
-        data = parent_data[ids[i], date_starts[i] .. date_ends[i], [:ret]]
-        x = data[:, :ret]
-        out[i] = sum(x)
-    end
-    out
+@time @chain df_events[1:1000000, :] begin
+    @transform(:bhar = bhar(data[:firm_id, :est_window_start .. :est_window_end]),)
 end
-
-#@code_warntype get_all_items2(data,  df_events.firm_id[1:10], df_events.est_window_start[1:10], df_events.est_window_end[1:10])
-@time get_all_items2(data,  df_events.firm_id, df_events.est_window_start, df_events.est_window_end)
-
+##
+quick_reg(data[1, Date(2017) .. Date(2018), cols], @formula(ret ~ mkt + smb + hml + umd))
 ##
 
-function get_ind_column(parent_data::MarketData{T}, ids::Vector{T}, date_starts::Vector{Date}, date_ends::Vector{Date}) where {T}
-    out = zeros(length(ids))
-    for i in 1:length(ids)
-        x = parent_data.firmdata[ids[i]].ret
-        r = AbnormalReturns.date_range(parent_data.calendar, x.dates, date_starts[i] .. date_ends[i])
-        out[i] = sum(@view x.data[r])
-    end
-    out
-end
 
-@time get_ind_column(data,  df_events.firm_id, df_events.est_window_start, df_events.est_window_end)
-
-##
-@code_warntype get_ind_column(data,  df_events.firm_id[1:10], df_events.est_window_start[1:10], df_events.est_window_end[1:10])
-
+@benchmark $data[i, TimelineColumn.([:ret, :mkt, :smb, :hml, :umd])] setup=(i=rand(1:10000))
 ##
 
-@code_warntype data[500, Date(2015) .. Date(2016), [TimelineColumn(:ret)]]
+
+# i = 151465
+# ids = df_events.firm_id[1:100]
+# date_mins = df_events.est_window_start[1:100]
+# date_maxs = df_events.est_window_end[1:100]
+# f = @formula(ret ~ mkt + smb + hml + umd)
+# cols = AbnormalReturns.internal_termvars(f)
+# data_dict = AbnormalReturns.construct_id_dict(ids)
+# sch = apply_schema(f, schema(f, data))
+# cache = AbnormalReturns.create_pred_matrix(data[1], sch)
+# out = fill(BasicReg(0, f), length(ids))
+
+# int_data = data[1]
+
+
+
+b = @benchmarkable AbnormalReturns.vector_reg(
+    $data,
+    $ids,
+    $date_mins,
+    $date_maxs,
+    $f,
+)
+b.params.evals=100
+b.params.seconds=100
+run(b)
+##

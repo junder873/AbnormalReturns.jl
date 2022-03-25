@@ -70,3 +70,6 @@ end
 function Base.show(io::IO, cal::MarketCalendar)
     print(io, "MarketCalendar: $(cal.dtmin) .. $(cal.dtmax) with $(sum(cal.isbday_array)) business days")
 end
+
+cal_dt_min(x::MarketCalendar) = x.dtmin
+cal_dt_max(x::MarketCalendar) = x.dtmax

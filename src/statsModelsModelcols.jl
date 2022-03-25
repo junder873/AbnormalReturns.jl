@@ -19,27 +19,53 @@ provided dates (i.e., if the requested dates were from 1/1/2021-1/31/2021,
 a lag should return a value from before 1/1/2021 if the data exists).
 """
 
-function shift(data::DataVector, shifts::Int, cal::MarketCalendar)
+function shift_dates(data::DataVector, shifts::Int)
+    if shifts == 0
+        data_dates(data)
+    elseif shifts > 0 # lag
+        if shifts > bdayscount(calendar(data), dt_max(data), cal_dt_max(data))
+            advancebdays(calendar(data), dt_min(data), shifts) .. cal_dt_max(data)
+        else
+            advancebdays(calendar(data), dt_min(data), shifts) .. advancebdays(calendar(data), dt_max(data), shifts)
+        end
+    else # lead
+        if shifts < bdayscount(calendar(data), dt_min(data), cal_dt_min(data))
+            cal_dt_min(data) .. advancebdays(calendar(data), dt_min(data), shifts)
+        else
+            advancebdays(calendar(data), dt_min(data), shifts) .. advancebdays(calendar(data), dt_max(data), shifts)
+        end
+    end
+
+    # # shifts = 2 # shifts = -2
+    # obj_end_to_cal_end = bdayscount(data.calendar, dt_max(data), cal_dt_max(data)) # 1
+    # obj_start_to_cal_start = bdayscount(data.calendar, dt_min(data), cal_dt_min(data)) # -1
+    # dt_min_change = max(shifts, obj_start_to_cal_start) # 2 # -1
+    # dt_max_change = min(shifts, obj_end_to_cal_end) # 1 # -2
+    # dtmin = advancebdays(data.calendar, dt_min(data), dt_min_change) # = x.dates.left + 2 # = x.datesleft - 1 = cal.dtmin
+    # dtmax = advancebdays(data.calendar, dt_max(data), dt_max_change) # = x.dates.right + 1 = cal.dtend # x.dates.right - 2
+
+    # dtmin .. dtmax
+end
+
+
+function shift(data::DataVector, shifts::Int)
     if shifts == 0
         return data
     end
-    # shifts = 2 # shifts = -2
-    obj_end_to_cal_end = bdayscount(cal, data.dates.right, cal.dtmax) # 1
-    obj_start_to_cal_start = bdayscount(cal, data.dates.left, cal.dtmin) # -1
-    dt_min_change = max(shifts, obj_start_to_cal_start) # 2 # -1
-    dt_max_change = min(shifts, obj_end_to_cal_end) # 1 # -2
-    dt_min = advancebdays(cal, data.dates.left, dt_min_change) # = x.dates.left + 2 # = x.datesleft - 1 = cal.dtmin
-    dt_max = advancebdays(cal, data.dates.right, dt_max_change) # = x.dates.right + 1 = cal.dtend # x.dates.right - 2
-
-    new_data = raw_values(data)[1-(shifts - dt_min_change):end-(shifts - dt_max_change)]
+    new_dates = shift_dates(data, shifts)
+    len = bdayscount(data.calendar, dt_min(new_dates), dt_max(new_dates)) + 1
+    r = if len == length(raw_values(data))
+        1:length(raw_values(data))
+    else
+        if shifts > 0
+            1:len
+        else
+            1+(length(raw_values(data)) - len):length(raw_values(data))
+        end
+    end
     # [1 - (2 - 2):end - (2 - 1)] = [1:end-1]
     # [1 - (-2 - -1):end - (-2 - -2)] = [1 + 1:end]
-    new_missings = if data_missing_bdays(data) === nothing
-        nothing
-    else
-        filter(x -> x <= length(new_data), data_missing_bdays(data)) |> Set
-    end
-    DataVector(new_data, new_missings, dt_min .. dt_max)
+    DataVector(raw_values(data)[r], data_missing_bdays(data)[r], new_dates, data.calendar)
 end
 
 
@@ -48,29 +74,10 @@ StatsModels.modelcols(t::InterceptTerm{true}, d::TimelineTable) = ones(length(d)
 StatsModels.modelcols(t::InterceptTerm{false}, d::TimelineTable) = Matrix{Float64}(undef, length(d), 0)
 
 function StatsModels.modelcols(terms::MatrixTerm, data::TimelineTable)
-    # I did build another getindex function for this, but I need to combine the missing days from the new dataset
-    # if data.regression_cache !== nothing && terms == data.regression_cache.terms
-    #     r = date_range(data.calendar, data.regression_cache.dates, data.dates)
-    #     if data.missing_bdays !== nothing
-    #         r = r[Not(data.missing_bdays)]
-    #     end
-
-    #     return data.regression_cache.data[r, :]
-    # end
-    reduce(hcat, [modelcols(tt, data) for tt in terms.terms])
-    
-    #modelcols.(terms, Ref(data))
-    #out = modelcols(terms, columntable(data))
-    # if save_matrix
-    #     data.parent.regression_cache = RegressionCache(
-    #         terms,
-    #         out
-    #     )
-    # end
-    #return out
+    reduce(hcat, modelcols.(terms.terms, Ref(data)))
 end
 
-StatsModels.modelcols(t::ContinuousTerm, data::TimelineTable) = data[:, t.sym]
+StatsModels.modelcols(t::ContinuousTerm, data::TimelineTable{Mssng}) where {Mssng} = data[:, t.sym]
 function StatsModels.modelcols(ft::FunctionTerm{Fo, Fa, Names}, data::TimelineTable) where {Fo,Fa,Names}
     ft.fanon.((data[:, n] for n in Names)...)
 end
@@ -79,10 +86,22 @@ function StatsModels.modelcols(t::InteractionTerm, data::TimelineTable)
     StatsModels.row_kron_insideout(*, (modelcols(term, data) for term in t.terms)...)
 end
 
-function StatsModels.modelcols(ll::StatsModels.LeadLagTerm{<:Any, F}, data::TimelineTable) where F
-    #println(F.instance)
+function StatsModels.modelcols(ll::StatsModels.LeadLagTerm{<:Any, F}, data::TimelineTable{Mssngs}) where {F, Mssngs}
     data[:, F.instance(ll.term.sym, ll.nsteps)]
 end
+
+datavector_modelcols(t::ContinuousTerm, data::TimelineTable) = data[t.sym]
+function datavector_modlecols(t::StatsModels.LeadLagTerm{<:Any, F}, data::TimelineTable)  where {F, Mssngs}
+    data[F.instance(ll.term.sy, ll.nsteps)]
+end
+function datavector_modelcols(t::AbstractTerm, data::TimelineTable)
+    DataVector(
+            modelcols(t, data),
+            data_dates(data),
+            calendar(data)
+    )
+end
+
 
 """
 These are largely copied from StatsModels, I just am returning a TimelineColumn and have a special condition
@@ -96,22 +115,10 @@ internal_termvars(t::MatrixTerm) = internal_termvars(t.terms)
 internal_termvars(t::FormulaTerm) = union(internal_termvars(t.lhs), internal_termvars(t.rhs))
 internal_termvars(t::FunctionTerm{Fo,Fa,names}) where {Fo,Fa,names} = collect(TimelineColumn.(names))
 function internal_termvars(t::StatsModels.LeadLagTerm{T, F}) where {T, F<:Union{typeof(lead), typeof(lag)}}
-    #f = nameof(F.instance) == :lead ? lead : lag
     [F.instance(t.term.sym, t.nsteps)]
-    # if length(t.args_parsed) == 1
-    #     [F(first(t.args_parsed).sym)]
-    # elseif length(t.args_parsed) == 2
-    #     [F(first(t.args_parsed).sym, last(t.args_parsed).n)]
-    # else
-    #     throw(ArgumentError("`$opname` terms require 1 or 2 arguments."))
-    # end
 end
 
 StatsModels.term(x::TimelineColumn) = StatsModels.term(x.name)
-
-function StatsModels.schema(f::FormulaTerm, d::TimelineTable)
-    schema(f, d.parent)
-end
 
 function StatsModels.schema(f::FormulaTerm, d::MarketData)
     StatsModels.Schema(
@@ -119,4 +126,19 @@ function StatsModels.schema(f::FormulaTerm, d::MarketData)
             term.(StatsModels.termvars(f)) .=> ContinuousTerm.(StatsModels.termvars(f), 0.0, 0.0, 0.0, 0.0)
         )
     )
+end
+
+function StatsModels.schema(f::FormulaTerm, d::TimelineTable)
+    StatsModels.Schema(
+        Dict(
+            term.(StatsModels.termvars(f)) .=> ContinuousTerm.(StatsModels.termvars(f), 0.0, 0.0, 0.0, 0.0)
+        )
+    )
+end
+
+function int_lhs(f::FormulaTerm{L})::L where {L}
+    f.lhs
+end
+function int_rhs(f::FormulaTerm{L,R})::R where {L,R}
+    f.rhs
 end

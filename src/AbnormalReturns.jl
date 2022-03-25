@@ -8,6 +8,7 @@ using Statistics
 using Dates
 using DataFrames
 using IntervalSets
+using SparseArrays
 @reexport using BusinessDays
 @reexport using StatsModels
 using ShiftedArrays
@@ -50,6 +51,8 @@ export lag, lead
 include("marketCalendar.jl")
 include("dictIndex.jl")
 include("timelineData.jl")
+include("utils.jl")
+include("iterateTimelineTable.jl")
 include("fastRegression.jl")
 include("calcFunctions.jl")
 include("statsModelsModelcols.jl")

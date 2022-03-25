@@ -6,7 +6,7 @@ struct TimelineColumn
     TimelineColumn(n::Symbol, s::Int) = new(n, s)
 end
 
-mutable struct DictIndex
+struct DictIndex
     cols::Vector{TimelineColumn}
     lookup::Dict{Int, TimelineColumn}# reverse of other itmes since data is just stored in vectors
 end
@@ -82,3 +82,4 @@ function Base.iterate(x::DictIndex, i=1)
 end
 
 Base.convert(::Type{Symbol}, x::TimelineColumn) = Symbol(String(x))
+shift_count(x::TimelineColumn) = x.shifts

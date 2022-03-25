@@ -3,4 +3,4 @@
 *.jl.mem
 deps/deps.jl
 data/
-benchmark/Manifest.toml
+Manifest.toml

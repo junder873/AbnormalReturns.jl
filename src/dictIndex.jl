@@ -68,7 +68,7 @@ Base.isless(x::TimelineColumn, y::TimelineColumn) = isless(x.name, y.name) && is
 
 Base.show(io::IO, x::DictIndex) = show(io, names(x))
 
-Base.show(io::IO, x::TimelineColumn) = show(io, String(x))
+Base.show(io::IO, x::TimelineColumn) = print(io, String(x))
 
 ShiftedArrays.lead(x::Symbol, n::Int=1) = TimelineColumn(x, -n)
 ShiftedArrays.lag(x::Symbol, n::Int=1) = TimelineColumn(x, n)

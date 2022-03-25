@@ -80,3 +80,9 @@ function Base.getindex(data::MarketData{T}, ids::Vector{T}, dates::ClosedInterva
         unique(ids)
     )
 end
+
+function Base.show(io::IO, data::IterateTimelineTable)
+    println(io, "Iterable set of TimelineTable with $(length(data)) unique firms")
+    println(io, "and a total number of iterations of $(total_length(data)) and a parent of")
+    show(io, parent(data))
+end

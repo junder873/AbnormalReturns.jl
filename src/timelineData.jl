@@ -368,6 +368,16 @@ function Base.getindex(
     out
 end
 
+function Base.getindex(
+    data::MarketData{T},
+    id::T,
+    dates::ClosedInterval{Date},
+    cols::Vector,
+    allow_mssng::Type{AllowMissing{Mssng}}=AllowMissing{false}
+) where {T, Mssng}
+    data[id, dates, TimelineColumn.(cols), allow_mssng]
+end
+
 function Base.getindex(data::TimelineTable, col::TimelineColumn)
     parent(data)[data.id, col]
 end
@@ -404,7 +414,21 @@ function Base.getindex(
     out = data[col][dates]
     out = allowmissing(out)
     out[new_mssngs] .= missing
-    out
+    to_add_pre = ifelse(
+        dt_min(data) < dt_min(data_dates(data)),
+        bdayscount(calendar(data), dt_min(data), dt_min(data_dates(data))),
+        0
+    )
+    to_add_post = ifelse(
+        dt_max(data) > dt_max(data_dates(data)),
+        bdayscount(calendar(data), dt_max(data_dates(data)), dt_max(data)),
+        0
+    )
+    vcat(
+        fill(missing, to_add_pre),
+        out,
+        fill(missing, to_add_post)
+    )
 end
 
 function Base.getindex(
@@ -608,6 +632,7 @@ data_dates(x::TimelineTable) = x.dates
 data_missing_bdays(x::TimelineTable) = x.missing_bdays
 norm_dates(x::TimelineTable) = x.req_dates
 parent(data::TimelineTable) = data.parent
+data_id(data::TimelineTable) = data.id
 
 calendar(x::CalendarData) = x.calendar
 calendar(x::MarketData) = x.calendar
@@ -636,6 +661,13 @@ function Base.show(io::IO, data::MarketData{T, MNames, FNames}) where {T, MNames
     println(io, data.calendar)
     println(io, "Market Columns: $(join(MNames, ", "))")
     println(io, "Firm Columns: $(join(FNames, ", "))")
+end
+
+function Base.show(io::IO, data::TimelineTable{Mssng, T, MNames, FNames}) where {Mssng, T, MNames, FNames}
+    println(io, "TimelineTable for $(data_id(data)) and available columns $(join([MNames..., FNames...], ","))")
+    println(io, "Maximum dates given current column selection: $(data_dates(data))")
+    println(io, "Currently selected dates: $(norm_dates(data))")
+    pretty_table(io, data; header = vcat(["Date"], names(data)), tf=tf_simple)
 end
 
 dt_min(x::ClosedInterval{Date}) = x.left

@@ -7,11 +7,12 @@ using Reexport
 using Statistics
 using Dates
 using DataFrames
-using IntervalSets
+using IntervalSets: ClosedInterval, Ellipsis
 using SparseArrays
 @reexport using BusinessDays
 @reexport using StatsModels
 using ShiftedArrays
+using PrettyTables
 
 ##############################################################################
 ##

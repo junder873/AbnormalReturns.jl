@@ -61,6 +61,7 @@ is calculated for the MARKET_DATA_CACHE.
 These functions treat missing returns in the period implicitly as a zero return.
 """
 function bh_return(data::TimelineTable, col; minobs=0.8)
+    col = TimelineColumn(col)
     if nnz(data_missing_bdays(data)) == 0
         x = view(data[col], norm_dates(data))
     else
@@ -124,8 +125,7 @@ function pred_diff(
     f = rr.formula
     sch = apply_schema(f, schema(f, data))
     select!(data, internal_termvars(sch))
-    #data = dropmissing(data)
-    if length(data) < adjust_minobs(minobs, calendar(data), norm_dates(data)) || length(data) <= length(names(data))
+    if length(data) < adjust_minobs(minobs, calendar(data), norm_dates(data))
         return missing
     end
     # since the values in a continuous term of mean/var/min/max are not used here,

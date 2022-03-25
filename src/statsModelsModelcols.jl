@@ -30,9 +30,9 @@ function shift_dates(data::DataVector, shifts::Int)
         end
     else # lead
         if shifts < bdayscount(calendar(data), dt_min(data), cal_dt_min(data))
-            cal_dt_min(data) .. advancebdays(calendar(data), dt_min(data), shifts)
+            cal_dt_min(data) .. advancebdays(calendar(data), dt_max(data), shifts)
         else
-            advancebdays(calendar(data), dt_min(data), shifts) .. advancebdays(calendar(data), dt_max(data), shifts)
+            advancebdays(calendar(data), dt_max(data), shifts) .. advancebdays(calendar(data), dt_max(data), shifts)
         end
     end
 

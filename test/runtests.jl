@@ -4,9 +4,9 @@ using AbnormalReturns
 ##
 
 
-df_firm = CSV.File(joinpath("ab_ret_test data", "daily_ret.csv")) |> DataFrame
-df_mkt = CSV.File(joinpath("ab_ret_test data", "mkt_ret.csv")) |> DataFrame
-df_res = CSV.File(joinpath("ab_ret_test data", "car_results.csv")) |> DataFrame
+df_firm = CSV.File(joinpath("data", "daily_ret.csv")) |> DataFrame
+df_mkt = CSV.File(joinpath("data", "mkt_ret.csv")) |> DataFrame
+df_res = CSV.File(joinpath("data", "car_results.csv")) |> DataFrame
 df_mkt[!, :mkt] = df_mkt.mktrf .+ df_mkt.rf
 ##
 
@@ -17,7 +17,7 @@ data = MarketData(
 
 ##
 
-rr = quick_reg(data[18428, Date(2019, 4) .. Date(2019, 10), :], @formula(ret ~ mktrf + hml))
+rr = quick_reg(data[18428, Date(2019, 4) .. Date(2019, 10)], @formula(ret ~ mktrf + hml))
 @test coefnames(rr) == ["(Intercept)", "mktrf", "hml"]
 @test responsename(rr) == "ret"
 @test nobs(rr) == 126
@@ -31,9 +31,9 @@ rr = quick_reg(data[18428, Date(2019, 4) .. Date(2019, 10), :], @formula(ret ~ m
 
 ##
 
-@test_throws ArgumentError quick_reg(data[1, Date(2020) .. Date(2021), :], @formula(ret ~ mktrf))
+@test_throws KeyError quick_reg(data[1, Date(2020) .. Date(2021)], @formula(ret ~ mktrf))
 
-rr = quick_reg(data[18428, Date(2019, 4) .. Date(2019, 10), :], @formula(ret ~ mktrf + hml); minobs=1000)# not enough data case
+rr = quick_reg(data[18428, Date(2019, 4) .. Date(2019, 10)], @formula(ret ~ mktrf + hml); minobs=1000)# not enough data case
 
 @test ismissing(coefnames(rr))
 @test ismissing(coef(rr))
@@ -54,19 +54,16 @@ event_end(x; data=data) = advancebdays(data.calendar, tobday(data.calendar, x), 
 est_end(x; data=data) = advancebdays(data.calendar, event_start(x), -16)
 est_start(x; data=data) = advancebdays(data.calendar, est_end(x), -149)
 
-rr_market = AbnormalReturns.vector_reg(
-    data,
-    df_res.permno,
-    est_start.(df_res.event_date),
-    est_end.(df_res.event_date),
+rr_market = quick_reg(
+    data[df_res.permno, est_start.(df_res.event_date) .. est_end.(df_res.event_date)],
     @formula(ret ~ mktrf)
 )
 
 @test isapprox(round.(alpha.(rr_market), digits=5), df_res.alpha_market_model_)
 @test isapprox(round.(beta.(rr_market), digits=3), df_res.beta_market_model)
-cars = car(data, df_res.permno, event_start.(df_res.event_date), event_end.(df_res.event_date), rr_market)
+cars = car(data[df_res.permno, event_start.(df_res.event_date) .. event_end.(df_res.event_date)], rr_market)
 @test isapprox(round.(cars, sigdigits=3), df_res.car_mm)
-bhars = bhar(data, df_res.permno, event_start.(df_res.event_date), event_end.(df_res.event_date), rr_market)
+bhars = bhar(data[df_res.permno, event_start.(df_res.event_date) .. event_end.(df_res.event_date)], rr_market)
 @test isapprox(round.(bhars, sigdigits=3), df_res.bhar_mm)
 stds = std.(rr_market)
 vars = var.(rr_market)
@@ -74,17 +71,14 @@ vars = var.(rr_market)
 
 ##
 
-rr_ff = AbnormalReturns.vector_reg(
-    data,
-    df_res.permno,
-    est_start.(df_res.event_date),
-    est_end.(df_res.event_date),
+rr_ff = quick_reg(
+    data[df_res.permno, est_start.(df_res.event_date) .. est_end.(df_res.event_date)],
     @formula(ret ~ mktrf + smb + hml)
 )
 
-cars = car(data, df_res.permno, event_start.(df_res.event_date), event_end.(df_res.event_date), rr_ff)
+cars = car(data[df_res.permno, event_start.(df_res.event_date) .. event_end.(df_res.event_date)], rr_ff)
 @test isapprox(round.(cars, sigdigits=3), df_res.car_ff)
-bhars = bhar(data, df_res.permno, event_start.(df_res.event_date), event_end.(df_res.event_date), rr_ff)
+bhars = bhar(data[df_res.permno, event_start.(df_res.event_date) .. event_end.(df_res.event_date)], rr_ff)
 @test isapprox(round.(bhars, sigdigits=3), df_res.bhar_ff)
 stds = std.(rr_ff)
 vars = var.(rr_ff)
@@ -92,17 +86,14 @@ vars = var.(rr_ff)
 
 ##
 
-rr_ffm = AbnormalReturns.vector_reg(
-    data,
-    df_res.permno,
-    est_start.(df_res.event_date),
-    est_end.(df_res.event_date),
+rr_ffm = quick_reg(
+    data[df_res.permno, est_start.(df_res.event_date) .. est_end.(df_res.event_date)],
     @formula(ret ~ mktrf + smb + hml + umd)
 )
 
-cars = car(data, df_res.permno, event_start.(df_res.event_date), event_end.(df_res.event_date), rr_ffm)
+cars = car(data[df_res.permno, event_start.(df_res.event_date) .. event_end.(df_res.event_date)], rr_ffm)
 @test isapprox(round.(cars, sigdigits=3), df_res.car_ffm)
-bhars = bhar(data, df_res.permno, event_start.(df_res.event_date), event_end.(df_res.event_date), rr_ffm)
+bhars = bhar(data[df_res.permno, event_start.(df_res.event_date) .. event_end.(df_res.event_date)], rr_ffm)
 @test isapprox(round.(bhars, sigdigits=3), df_res.bhar_ffm)
 stds = std.(rr_ffm)
 vars = var.(rr_ffm)

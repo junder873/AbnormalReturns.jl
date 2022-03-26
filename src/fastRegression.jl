@@ -239,44 +239,6 @@ function quick_reg(
     )
 end
 
-
-"""
-
-    cache_reg(
-        id::Int,
-        est_min::Date,
-        est_max::Date;
-        cols_market::Union{Nothing, Vector{String}}=nothing,
-        col_firm::String="ret",
-        minobs=.8,
-        calendar="CrspMarketCalendar"
-    )
-
-An intentionally minamilistic linear regression of a vector of firm data on a matrix
-of market data, where the firm data is provided by an Integer id and the range
-of dates. Designed to quickly estimate Fama French predicted returns.
-
-## Arguments
-
-- `id::Int`: The firm identifier
-- `est_min::Date`: The start of the estimation period
-- `est_max::Date`: The end of the estimation period
-- `cols_market::Union{Nothing, Vector{String}}=nothing`: A vector of columns that are stored
-    in the MARKET_DATA_CACHE, should not be repeated and it is recommended to include `"intercept"`
-    as the intercept (typically first). If `nothing` (default) then all columns saved will be used.
-    Note that if all columns are used there could be errors in the regression (if the risk free rate
-    is stored) since over short periods the risk free rate is often constant and conflicts with
-    the intercept
-- `col_firm::String="ret"`: The column for the firm vector, typically this is the return, it must be
-    in the FIRM_DATA_CACHE data
-- `minobs=.8`: Minimum number of observations to run the regression, if the number provided
-    is less than 1, then it is assumed to be a ratio (i.e., minimum observations is number of
-    businessdays times minobs)
-- `calendar="CrspMarketCalendar"`: calendar to use if minobs is less than 1, should be initialized cache if
-    used.
-- `save_residuals::Bool=false`: Whether or not to save the residuals in the regression
-"""
-
 StatsBase.predict(mod::BasicReg, x) = x * coef(mod)
 
 StatsBase.coef(x::BasicReg) = isdefined(x, :coef) ? x.coef : missing
@@ -296,31 +258,6 @@ function StatsBase.residuals(x::BasicReg)
         x.residuals
     end
 end
-
-"""
-    predict(rr::RegressionModel, date_start::Date, date_end::Date)
-
-Uses a provided RegressionModel model and the cached saved market data to predict returns
-between the two dates provided.
-
-This will work with any RegressionModel provided as long as it provides methods for `coefnames`
-that correspond to names stored in the MARKET_DATA_CACHE and a `coef` method. The model should be linear.
-"""
-# # this might be too generalized...
-# function StatsBase.predict(rr::RegressionModel, data::TimelineTable{false})
-#     f = rr.formula
-#     select!(data, internal_termvars(f))
-    
-
-#     # a Schema is normally built by running schema(f, data)
-#     # but doing that repeatedly is quite slow and, in this case, does not
-#     # provide any extra use since all of the columns are already known to be continuous
-#     # and the other values (mean, var, min, max) are not used later
-#     sch = apply_schema(f, schema(f, data))
-
-#     pred = modelcols(sch.rhs, data)
-#     predict(rr, pred)
-# end
 
 function rhs_str(nms, vals; intercept = "(Intercept)")
     out = String[]

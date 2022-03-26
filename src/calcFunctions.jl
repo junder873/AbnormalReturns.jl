@@ -297,7 +297,7 @@ If a regression is passed, then the benchmark is based on the coefficients from 
 in the regression. These are sometimes called Fama-French abnormal returns. Simple abnormal returns use a market index as the benchmark
 (such as the S&P 500 or a value weighted return of all firms).
 
-Similar to constructing the regression
+Similar to constructing the regression, passing an `IterateTimelineTable` will return a Vector and uses a more optimized method.
 """
 function bhar(
     data::TimelineTable{Mssng, T, MNames, FNames},
@@ -334,17 +334,38 @@ function bhar(
 end
 
 """
-    car(id::Int, date_start::Date, date_end::Date, cols_market::String="vwretd", col_firm::String="ret")
-    car(id::Int, date_start::Date, date_end::Date, rr::Union{Missing, RegressionModel})
+    car(
+        data::TimelineTable{Mssng, T, MNames, FNames},
+        firm_col=FNames[1],
+        mkt_col=MNames[1];
+        minobs=0.8
+    ) where {Mssng, T, MNames, FNames}
 
-Calculates the difference between cumulative returns relative to the market. If a RegressionModel type is passed, then
-the expected return is estimated based on the regression (Fama French abnormal returns). Otherwise, the value is
-based off of the value provided (typically a market wide return).
+    car(
+        data::TimelineTable,
+        rr::RegressionModel;
+        minobs=0.8
+    )
 
-Cumulative returns are the simple sum of returns, they are often used due to their ease to calculate but
-undervalue extreme returns compared to buy and hold returns (bh_return or bhar).
+    car(
+        data::IterateTimelineTable{T, MNames, FNames},
+        firm_col=FNames[1],
+        mkt_col=MNames[1];
+        minobs=0.8
+    ) where {T, MNames, FNames}
 
-These functions treat missing returns in the period implicitly as a zero return.
+    car(
+        data::IterateTimelineTable,
+        rrs::AbstractVector{<:BasicReg};
+        minobs=0.8
+    )
+
+Calculates the cumulative returns of a firm over a benchmark (through addition of each return).
+If a regression is passed, then the benchmark is based on the coefficients from that regression and the performance of the benchmarks
+in the regression. These are sometimes called Fama-French abnormal returns. Simple abnormal returns use a market index as the benchmark
+(such as the S&P 500 or a value weighted return of all firms).
+
+Similar to constructing the regression, passing an `IterateTimelineTable` will return a Vector and uses a more optimized method.
 """
 function car(
     data::TimelineTable{Mssng, T, MNames, FNames},

@@ -69,10 +69,6 @@ end
 CSV.write(joinpath("data", "mkt_ret.csv"), df_mkt_benchmark)
 CSV.write(joinpath("data", "firm_ret.csv"), df_rand)
 
-Arrow.write(joinpath("data", "mkt_ret.feather"), df_mkt_benchmark)
-Arrow.write(joinpath("data", "firm_ret.feather"), df_rand)
-
-
 ##
 
 df_events = DataFrame(

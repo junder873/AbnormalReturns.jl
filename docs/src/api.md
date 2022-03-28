@@ -1,5 +1,5 @@
 
-# AbnormalReturns.jl API
+# AbnormalReturns API
 
 This package reexports [StatsModels.jl](https://raw.githubusercontent.com/JuliaStats/StatsModels.jl) and [BusinessDays.jl](https://github.com/JuliaFinance/BusinessDays.jl). See those packages and their respective documentation for methods that they export.
 

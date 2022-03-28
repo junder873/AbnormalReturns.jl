@@ -1,6 +1,22 @@
 
 abstract type CalendarData end
 
+"""
+    struct DataVector <: CalendarData
+        data::Vector{Float64}
+        missing_bdays::SparseVector{Bool, Int}
+        dates::ClosedInterval{Date}
+        calendar::MarketCalendar
+        function DataVector(data, missing_bdays, dates, calendar)
+            @assert length(data) == length(missing_bdays) == bdayscount(calendar, dates.left, dates.right) + 1 "Data does not match length of dates or missings"
+            new(data, missing_bdays, dates, calendar)
+        end
+    end
+
+    DataVector(data::AbstractVector, dates::ClosedInterval{Date}, cal::MarketCalendar)
+
+    DataVector(data::AbstractVector, dates::AbstractVector{Date}, cal::MarketCalendar)
+"""
 struct DataVector <: CalendarData
     data::Vector{Float64}
     missing_bdays::SparseVector{Bool, Int}
@@ -12,6 +28,20 @@ struct DataVector <: CalendarData
     end
 end
 
+"""
+    struct DataMatrix <: CalendarData
+        data::Matrix{Float64}
+        missing_bdays::SparseVector{Bool, Int}# corresponds to each row with a missing value
+        dates::ClosedInterval{Date}
+        calendar::MarketCalendar
+        function DataMatrix(data, missing_bdays, dates, calendar)
+            @assert size(data, 1) == length(missing_bdays) == bdayscount(calendar, dates.left, dates.right) + 1 "Data does not match length of dates or missings"
+            new(data, missing_bdays, dates, calendar)
+        end
+    end
+
+    DataMatrix(data::AbstractMatrix, dates::ClosedInterval{Date}, cal::MarketCalendar)
+"""
 struct DataMatrix <: CalendarData
     data::Matrix{Float64}
     missing_bdays::SparseVector{Bool, Int}# corresponds to each row with a missing value
@@ -31,14 +61,46 @@ end
 
 struct AllowMissing{mssng} end
 
+"""
+    mutable struct TimelineTable{Mssng, T, MNames, FNames, N1, N2} <: Tables.AbstractColumns
+        parent::MarketData{T, MNames, FNames, N1, N2}
+        "The current ID"
+        id::T
+        "Whether the functions return Vector{Union{Missing, Float64}} or Vector{Float64}"
+        allow_missing::Type{AllowMissing{Mssng}}
+        "Actual returnable dates that guarentees a square matrix made of the minimum and maximum of the DataVectors for this ID and set of columns"
+        dates::ClosedInterval{Date}
+        "Index of column names and any lags/leads"
+        cols::DictIndex
+        "missing days between the dates"
+        missing_bdays::SparseVector{Bool, Int}
+        "dates requested, which provides what data is automatically returned by functions"
+        req_dates::ClosedInterval{Date}
+    end
+
+
+This type provides [Tables.jl](https://github.com/JuliaData/Tables.jl) access to
+`DataVector`s.
+
+Functions to update some values are:
+- `AbnormalReturns.update_id!`: changes the `id` (which updates `dates` and `missing_bdays`)
+- `select!`: changes the `cols` (also updates `dates` and `missing_bdays` if `cols` is different)
+- `AbnormalReturns.update_dates!`: changes `req_dates` (does not update anything else)
+"""
 mutable struct TimelineTable{Mssng, T, MNames, FNames, N1, N2} <: Tables.AbstractColumns
     parent::MarketData{T, MNames, FNames, N1, N2}
-    id::T# The current ID
-    allow_missing::Type{AllowMissing{Mssng}}# Whether the functions return Vector{Union{Missing, Float64}} or Vector{Float64}
-    dates::ClosedInterval{Date}# actual returnable dates that guarentees a square matrix
-    cols::DictIndex# Index of column names, allows for creating lag/lead columns
-    missing_bdays::SparseVector{Bool, Int}# missing days between the dates
-    req_dates::ClosedInterval{Date}# dates requested, matters for calculating missing obs
+    "The current ID"
+    id::T
+    "Whether the functions return Vector{Union{Missing, Float64}} or Vector{Float64}"
+    allow_missing::Type{AllowMissing{Mssng}}
+    "Actual returnable dates that guarentees a square matrix made of the minimum and maximum of the DataVectors for this ID and set of columns"
+    dates::ClosedInterval{Date}
+    "Index of column names and any lags/leads"
+    cols::DictIndex
+    "missing days between the dates"
+    missing_bdays::SparseVector{Bool, Int}
+    "dates requested, which provides what data is automatically returned by functions"
+    req_dates::ClosedInterval{Date}
 end
 
 """

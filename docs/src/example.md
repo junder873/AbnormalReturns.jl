@@ -1,4 +1,4 @@
-# Example
+# AbnormalReturns Example
 
 As a quick example:
 ```@example

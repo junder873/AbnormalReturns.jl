@@ -51,8 +51,6 @@ car(x::AbstractVector, y::AbstractVector) = sum(skipmissing(x)) - sum(skipmissin
 var_diff(x, y) = var(x) + var(y) - 2 * cov(x, y)
 # for firm data
 """
-    bh_return(id::Int, date_start::Date, date_end::Date, col_firm::String="ret")
-    bh_return(date_start::Date, date_end::Date, cols_market::String="vwretd")
 
 Calculates the buy and hold returns (also called geometric return) for TimelineData. If an Integer
 is passed, then it is calculated based on the FIRM_DATA_CACHE (for the integer provided), otherwise
@@ -62,11 +60,13 @@ These functions treat missing returns in the period implicitly as a zero return.
 """
 function bh_return(data::TimelineTable, col; minobs=0.8)
     col = TimelineColumn(col)
+    select!(data, [col])
+    dates = dates_min_max(norm_dates(data), data_dates(data))
     if nnz(data_missing_bdays(data)) == 0
-        x = view(data[col], norm_dates(data))
+        x = view(data[col], dates)
     else
-        new_missings = get_missing_bdays(data, norm_dates(data))
-        x = view(data[col], norm_dates(data), new_missings)
+        new_missings = get_missing_bdays(data, dates)
+        x = view(data[col], dates, new_missings)
     end
     if length(x) < adjust_minobs(minobs, calendar(data), norm_dates(data))
         missing
@@ -75,12 +75,64 @@ function bh_return(data::TimelineTable, col; minobs=0.8)
     end
 end
 
-function sum_return(data::TimelineTable, col; minobs=0.8)
-    if nnz(data_missing_bdays(data)) == 0
-        x = view(data[col], norm_dates(data))
+function fill_vector_bh_return!(
+    out_vector::Vector{Union{Missing, Float64}},
+    iter_data::IterateTimelineTable,
+    col::TimelineColumn;
+    minobs=0.8
+)
+    @assert validate_iterator(iter_data, out_vector) "Length of out_vector does not match the number of indexes in the iterator"
+
+    Threads.@threads for (u_id, iter_indexes) in iter_data
+        data = parent(iter_data)[u_id, [col], AllowMissing{true}]
+        resp = data[col]
+        for iter in iter_indexes
+            cur_dates = dates_min_max(data_dates(data), iter_dates(iter))
+            if nnz(data_missing_bdays(data)) == 0
+                x = view(resp, cur_dates)
+            else
+                new_mssngs = get_missing_bdays(data, cur_dates)
+                x = view(resp, cur_dates, new_mssngs)
+            end
+            
+            length(x) < adjust_minobs(minobs, calendar(parent(iter_data)), iter_dates(iter)) && continue
+
+            @inbounds out_vector[iter_index(iter)] = bh_return(x)
+
+        end
+    end
+    out_vector
+end
+
+function bh_return(
+    data::IterateTimelineTable,
+    col;
+    minobs=0.8
+)
+    col = TimelineColumn(col)
+    out = Vector{Union{Missing, Float64}}(missing, total_length(data))
+    fill_vector_bh_return!(
+        out,
+        data,
+        col;
+        minobs
+    )
+    if any(ismissing.(out))
+        out
     else
-        new_missings = get_missing_bdays(data, norm_dates(data))
-        x = view(data[col], norm_dates(data), new_missings)
+        disallowmissing(out)
+    end
+end
+
+function sum_return(data::TimelineTable, col; minobs=0.8)
+    col = TimelineColumn(col)
+    select!(data, [col])
+    dates = dates_min_max(norm_dates(data), data_dates(data))
+    if nnz(data_missing_bdays(data)) == 0
+        x = view(data[col], dates)
+    else
+        new_missings = get_missing_bdays(data, dates)
+        x = view(data[col], dates, new_missings)
     end
     if length(x) < adjust_minobs(minobs, calendar(data), norm_dates(data))
         missing
@@ -98,13 +150,14 @@ function simple_diff(
 )
 
     select!(data, [firm_col, mkt_col])
+    dates = dates_min_max(norm_dates(data), data_dates(data))
     if nnz(data_missing_bdays(data)) == 0
-        x = view(data[firm_col], norm_dates(data))
-        y = view(data[mkt_col], norm_dates(data))
+        x = view(data[firm_col], dates)
+        y = view(data[mkt_col], dates)
     else
-        new_missings = get_missing_bdays(data, norm_dates(data))
-        x = view(data[firm_col], norm_dates(data), new_missings)
-        y = view(data[mkt_col], norm_dates(data), new_missings)
+        new_missings = get_missing_bdays(data, dates)
+        x = view(data[firm_col], dates, new_missings)
+        y = view(data[mkt_col], dates, new_missings)
     end
     if length(x) < adjust_minobs(minobs, calendar(data), norm_dates(data))
         missing

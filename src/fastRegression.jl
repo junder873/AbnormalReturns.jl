@@ -252,6 +252,9 @@ StatsBase.islinear(x::BasicReg) = true
 StatsBase.deviance(x::BasicReg) = isdefined(x, :coef) ? x.tss : missing
 StatsBase.rss(x::BasicReg) = isdefined(x, :coef) ? x.rss : missing
 function StatsBase.residuals(x::BasicReg)
+    if !isdefined(x, :coef)
+        return missing
+    end
     if x.residuals === nothing
         @error("To access residuals, run `cache_reg` with the option `save_residuals=true`")
     else

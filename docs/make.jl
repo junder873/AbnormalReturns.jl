@@ -10,3 +10,8 @@ Documenter.makedocs(
         "API" => "api.md"
     ]
 )
+
+deploydocs(
+    repo = "github.com/junder873/AbnormalReturns.jl.git",
+    target = "build",
+)

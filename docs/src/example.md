@@ -1,4 +1,4 @@
-# AbnormalReturns Example
+# [AbnormalReturns Example](@id Example)
 
 As a quick example:
 ```@example
@@ -42,7 +42,7 @@ show(df_events) # hide
 
 ## Data
 
-For the basic data, this uses the files in the test folder of this package ("test\data"). The "daily_ret.csv" file is a selection of firm returns, while "mkt_ret.csv" includes the average market return along with some Fama-French factor returns, you can download similar Fama-French data from [here](https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/data_library.html) and stock market data from [AlphaVantage.jl](https://github.com/ellisvalentiner/AlphaVantage.jl) or [WRDSMerger.jl](https://github.com/junder873/WRDSMerger.jl) (requires access to the WRDS database).
+For the basic data, this uses the files in the test folder of this package ("test\data"). The "daily\_ret.csv" file is a selection of firm returns, while "mkt\_ret.csv" includes the average market return along with some Fama-French factor returns, you can download similar Fama-French data from [here](https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/data_library.html) and stock market data from [AlphaVantage.jl](https://github.com/ellisvalentiner/AlphaVantage.jl) or [WRDSMerger.jl](https://github.com/junder873/WRDSMerger.jl) (requires access to the WRDS database).
 
 The firm data uses "Permno" to identify a stock. This package will work with other identifiers, as long as the identifier-date pair is unique.
 
@@ -118,6 +118,7 @@ with_missings = allowmissing(no_missings)
 ## Estimating Regressions
 
 The main goal of this package is quickly running regressions for firm events. The example used here is a firm's earnings announcement. Starting with one example, Oracle announced its Q3 2020 earnings on 2020-9-10. Calculating abnormal returns typically follows three steps:
+
 1. Estimate how the firm typically responds to market factors during a control (or estimation) window
 2. Use the coefficients from that regression to estimate how the firm should do during the event window
 3. Subtract the estimated return from the actual firm return during the event window. Depending on how this difference is aggregated, these are typically buy and hold abnormal returns (bhar) or cumulative abnormla returns (CAR)

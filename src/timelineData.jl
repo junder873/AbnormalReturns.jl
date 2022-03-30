@@ -1,4 +1,18 @@
+"""
+```@setup general
+data_dir = joinpath("..", "..", "test", "data") # hide
+using CSV, DataFramesMeta, Dates, AbnormalReturns
 
+df_firm = CSV.File(joinpath(data_dir, "daily_ret.csv")) |> DataFrame
+df_mkt = CSV.File(joinpath(data_dir, "mkt_ret.csv")) |> DataFrame
+df_mkt[!, :mkt] = df_mkt.mktrf .+ df_mkt.rf
+df_events = CSV.File(joinpath(data_dir, "firm_earnings_announcements.csv")) |> DataFrame
+mkt_data = MarketData(
+    df_mkt,
+    df_firm
+)
+```
+"""
 abstract type CalendarData end
 
 """
@@ -115,16 +129,18 @@ end
     )
 
 ## Arguments
-- df_market: A Tables.jl compatible source that stores market data, indexed by date.
+- `df_market`: A Tables.jl compatible source that stores market data, indexed by date.
     The dates must be a unique set. The column name for the date column is specified
     by the keyword argument "date_col_market"
-- df_firms: A Tables.jl compatible source that stores firm data. Each firm must have a
+- `df_firms`: A Tables.jl compatible source that stores firm data. Each firm must have a
     unique set of dates. The column name for the date column is specified
     by the keyword argument "date_col_firms" and the firm ID column is specified
     by the keyword argument "id_col"
-- valuecols_market=nothing and valuecols_firms: If left as nothing, all other columns in `df_market` are
+- `valuecols_market=nothing`: If left as nothing, all other columns in `df_market` are
     used as the value columns. These are the columns that are stored in the resulting
     dataset. Otherwise a vector of Symbol or String specifying column names.
+- `valuecols_firms=nothing`: Same as above
+- `id_col=:permno`: The column corresponding to the set of firm IDs in `df_firms`
 
 MarketData is the main data storage structure. Data is stored for each firm in
 a Dict, where the data itself is a NamedTuple (names corresponding to column names,
@@ -133,6 +149,18 @@ struct also stores overall market data and a calendar of dates.
 
 Any firm data must have a corresponding market data date, so there cannot be a
 firm return if there is not a market return on that date.
+
+## Example
+
+```@example general
+df_firm = CSV.File(joinpath(data_dir, "daily_ret.csv"))
+df_mkt = CSV.File(joinpath(data_dir, "mkt_ret.csv"))
+df_mkt[!, :mkt] = df_mkt.mktrf .+ df_mkt.rf
+mkt_data = MarketData(
+    df_mkt,
+    df_firm
+)
+```
 """
 function MarketData(
     df_market,

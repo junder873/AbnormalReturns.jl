@@ -47,6 +47,65 @@ function calc_rss(resp, pred, coef)
     end
     out
 end
+
+function mul_vec(x, y)
+    out = 0.0
+    @simd for i in 1:length(x)
+        @inbounds out += x[i] * y[i]
+    end
+    out
+end
+function square_mult(x)
+    cols = size(x, 2)
+    out = zeros((cols, cols))
+    for i in 1:cols
+        for j in 1:i
+            @views out[i, j] = mul_vec(
+                x[:, i],
+                x[:, j]
+            )
+        end
+    end
+    for i in 1:cols
+        for j in 1:i-1
+            out[j, i] = out[i, j]
+        end
+    end
+
+    out
+end
+
+function second_mult(x, y)
+    cols = size(x, 2)
+    out = zeros(cols)
+    for i in 1:cols
+        @views out[i] = mul_vec(
+            x[:, i],
+            y
+        )
+    end
+    out
+end
+function quick_cholesky(x; l=size(x, 1))
+    #out = zeros((l, l))
+    for i in 1:l
+        for j in 1:i
+            sum1 = 0.0
+            @simd for k in 1:j-1
+                sum1 += x[j, k] * x[i, k]
+            end
+            if j == i
+                @inbounds x[j, j] = sqrt(x[j, j] - sum1)
+            else
+                if x[j, j] > 0
+                    @inbounds x[i, j] = (x[i, j] - sum1) / x[j, j]
+                end
+            end
+        end
+    end
+    LowerTriangular(x)
+    #out
+end
 """
     function BasicReg(
         resp::AbstractVector{Float64},
@@ -87,7 +146,9 @@ function BasicReg(
         return BasicReg(length(resp), f)
     end
 
-    coef = cholesky!(Symmetric(pred' * pred)) \ (pred' * resp)
+    chols = quick_cholesky(square_mult(pred))
+    coef = ldiv!(chols', ldiv!(chols, second_mult(pred, resp)))
+    #coef = cholesky!(Symmetric(pred' * pred)) \ (pred' * resp)
 
     BasicReg(
         length(resp),

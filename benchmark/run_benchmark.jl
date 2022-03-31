@@ -38,7 +38,7 @@ GC.gc()
     )
 end
 # First run R5 3600: 19.867720 seconds (63.84 M allocations: 5.861 GiB, 13.96% gc time, 52.57% compilation time)
-# Second run R5 3600: 8.928954 seconds (37.73 M allocations: 4.539 GiB, 17.06% gc time, 0.94% compilation time)
+# Second run R5 3600:  5.119646 seconds (31.73 M allocations: 4.136 GiB, 21.37% gc time, 1.56% compilation time)
 # First run i7 6700: 33.919134 seconds (64.13 M allocations: 5.936 GiB, 45.39% gc time, 65.25% compilation time)
 # Second run i7 6700: 19.343996 seconds (37.73 M allocations: 4.602 GiB, 62.63% gc time, 0.44% compilation time)
 
@@ -56,7 +56,7 @@ end
 @time @chain df_events[1:1000000, :] begin
     @transform(:reg = quick_reg(data[:firm_id, :est_window_start .. :est_window_end], @formula(ret ~ mkt + smb + hml + umd)),)
 end
-# Run R5 3600: 2.824239 seconds (8.57 M allocations: 1.336 GiB, 1.89% compilation time)
+# Run R5 3600: 1.211641 seconds (5.53 M allocations: 1.199 GiB, 2.86% compilation time)
 ##
 @time @chain df_events[1:1000000, :] begin
     @transform(:bhar = bhar(data[:firm_id, :est_window_start .. :est_window_end]),)

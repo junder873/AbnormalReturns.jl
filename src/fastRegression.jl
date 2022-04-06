@@ -106,6 +106,28 @@ function quick_cholesky(x; l=size(x, 1))
     LowerTriangular(x)
     #out
 end
+function my_ldiv!(L::LowerTriangular, y)
+    for i in 1:length(y)
+        sum1 = 0.0
+        @simd for j in 1:i-1
+            sum1 += L[i, j] * y[j]
+        end
+        y[i] = (y[i] - sum1) / L[i, i]
+    end
+    y
+end
+
+function my_ldiv!(L::UpperTriangular, y)
+    for i in length(y):-1:1
+        sum1 = 0.0
+        @simd for j in length(y):-1:i+1
+            sum1 += L[i, j] * y[j]
+        end
+        y[i] = (y[i] - sum1) / L[i, i]
+    end
+    y
+end
+
 """
     function BasicReg(
         resp::AbstractVector{Float64},
@@ -147,7 +169,7 @@ function BasicReg(
     end
 
     chols = quick_cholesky(square_mult(pred))
-    coef = ldiv!(chols', ldiv!(chols, second_mult(pred, resp)))
+    coef = my_ldiv!(chols', my_ldiv!(chols, second_mult(pred, resp)))
     #coef = cholesky!(Symmetric(pred' * pred)) \ (pred' * resp)
 
     BasicReg(

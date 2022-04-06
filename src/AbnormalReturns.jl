@@ -7,7 +7,7 @@ using Reexport
 using Statistics
 using Dates
 using DataFrames
-using IntervalSets: ClosedInterval, Ellipsis, (..)
+using IntervalSets: ClosedInterval, (..)
 using SparseArrays
 @reexport using BusinessDays
 @reexport using StatsModels
@@ -37,7 +37,7 @@ export coef, coefnames, responsename, nobs, dof_residual,
 
 export getindex
 
-export dropmissing, select!
+export dropmissing, select!, allowmissing
 
 export ClosedInterval, ..
 

@@ -55,9 +55,10 @@ function mul_vec(x, y)
     end
     out
 end
-function square_mult!(out::MMatrix{N, N}, x) where {N}
-    @assert size(x, 2) == N "Wrong number of columns"
-    for i in 1:N
+function square_mult(x)
+    cols = size(x, 2)
+    out = zeros((cols, cols))
+    for i in 1:cols
         for j in 1:i
             @views out[i, j] = mul_vec(
                 x[:, i],
@@ -65,17 +66,19 @@ function square_mult!(out::MMatrix{N, N}, x) where {N}
             )
         end
     end
-    for i in 1:N
+    for i in 1:cols
         for j in 1:i-1
             out[j, i] = out[i, j]
         end
     end
+
     out
 end
 
-function second_mult!(out::MVector{N}, x, y) where {N}
-    @assert size(x, 2) == N "Wrong number of columns"
-    for i in 1:N
+function second_mult(x, y)
+    cols = size(x, 2)
+    out = zeros(cols)
+    for i in 1:cols
         @views out[i] = mul_vec(
             x[:, i],
             y
@@ -83,29 +86,28 @@ function second_mult!(out::MVector{N}, x, y) where {N}
     end
     out
 end
-function quick_cholesky!(x::MMatrix{N, N}) where {N}
-    for i in 1:N
+function quick_cholesky(x; l=size(x, 1))
+    #out = zeros((l, l))
+    for i in 1:l
         for j in 1:i
             sum1 = 0.0
             @simd for k in 1:j-1
                 sum1 += x[j, k] * x[i, k]
             end
             if j == i
-                x[j, j] = sqrt(x[j, j] - sum1)
-            elseif x[j, j] > 0
-                x[i, j] = (x[i, j] - sum1) / x[j, j]
+                @inbounds x[j, j] = sqrt(x[j, j] - sum1)
+            else
+                if x[j, j] > 0
+                    @inbounds x[i, j] = (x[i, j] - sum1) / x[j, j]
+                end
             end
         end
     end
-    for i in 1:N
-        for j in 1:i-1
-            x[j, i] = x[i, j]
-        end
-    end
     LowerTriangular(x)
+    #out
 end
-function my_ldiv!(L::LowerTriangular{T, MMatrix{N, N, T, N2}}, y::MVector{N}) where {T, N, N2}
-    for i in 1:N
+function my_ldiv!(L::LowerTriangular, y)
+    for i in 1:length(y)
         sum1 = 0.0
         @simd for j in 1:i-1
             sum1 += L[i, j] * y[j]
@@ -115,10 +117,10 @@ function my_ldiv!(L::LowerTriangular{T, MMatrix{N, N, T, N2}}, y::MVector{N}) wh
     y
 end
 
-function my_ldiv!(L::UpperTriangular{T, MMatrix{N, N, T, N2}}, y::MVector{N}) where {T, N, N2}
-    for i in N:-1:1
+function my_ldiv!(L::UpperTriangular, y)
+    for i in length(y):-1:1
         sum1 = 0.0
-        @simd for j in N:-1:i+1
+        @simd for j in length(y):-1:i+1
             sum1 += L[i, j] * y[j]
         end
         y[i] = (y[i] - sum1) / L[i, i]
@@ -158,28 +160,26 @@ function BasicReg(
     pred::AbstractMatrix{Float64},
     yname::String,
     xnames::Vector{String},
-    f::FormulaTerm{L,R},
-    cur_mat::MMatrix{N, N},
-    cur_vec::MVector{N};
+    f::FormulaTerm{L,R};
     save_residuals::Bool=false,
     minobs=1
-)::BasicReg{L,R} where {L,R,N}
+)::BasicReg{L,R} where {L,R}
     if length(resp) <= size(pred, 2) || length(resp) < minobs
         return BasicReg(length(resp), f)
     end
 
-    quick_cholesky!(square_mult!(cur_mat, pred))
-    my_ldiv!(LowerTriangular(cur_mat), my_ldiv!(UpperTriangular(cur_mat), second_mult!(cur_vec, pred, resp)))
+    chols = quick_cholesky(square_mult(pred))
+    coef = my_ldiv!(chols', my_ldiv!(chols, second_mult(pred, resp)))
     #coef = cholesky!(Symmetric(pred' * pred)) \ (pred' * resp)
 
     BasicReg(
         length(resp),
         f,
-        Vector(cur_vec),
+        coef,
         xnames,
         yname,
         calc_tss(resp),
-        calc_rss(resp, pred, cur_vec),
+        calc_rss(resp, pred, coef),
         save_residuals ? resp - pred * coef : nothing
     )
 end
@@ -271,15 +271,10 @@ function fill_vector_reg!(
     @assert validate_iterator(iter_data, out_vector) "Length of out_vector does not match the number of indexes in the iterator"
     cols = internal_termvars(sch)
     yname, xnames = coefnames(sch)
-    N = length(xnames)
-    cur_mat = zeros(MMatrix{N, N})
-    cur_vec = zeros(MVector{N})
     
-    for (u_id, iter_indexes) in iter_data
+    Threads.@threads for (u_id, iter_indexes) in iter_data
         data = parent(iter_data)[u_id, cols, AllowMissing{true}]
         resp = datavector_modelcols(int_lhs(sch), data)
-        
-
         for iter in iter_indexes
             cur_dates = dates_min_max(data_dates(data), iter_dates(iter))
             if nnz(data_missing_bdays(data)) == 0
@@ -295,9 +290,7 @@ function fill_vector_reg!(
                 y,
                 yname,
                 xnames,
-                f,
-                cur_mat,
-                cur_vec;
+                f;
                 save_residuals,
                 minobs=adjust_minobs(minobs, calendar(parent(data)), iter_dates(iter))
             )

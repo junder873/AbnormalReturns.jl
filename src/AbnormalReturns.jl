@@ -13,6 +13,7 @@ using SparseArrays
 @reexport using StatsModels
 using ShiftedArrays
 using PrettyTables
+using StaticArrays
 
 ##############################################################################
 ##

@@ -363,6 +363,10 @@ function date_range(cal::MarketCalendar, data::CalendarData, dates::ClosedInterv
     date_range(cal, data_dates(data), dates)
 end
 
+function date_range(data::CalendarData, dates::ClosedInterval{Date})
+    date_range(calendar(data), data_dates(data), dates)
+end
+
 # , mssngs::SparseVector{Bool, Int}=spzeros(Bool, size(raw_values(data), 1))
 function Base.getindex(data::DataMatrix, dates::ClosedInterval{Date})
     new_dates = dates_min_max(data_dates(data), dates)

@@ -9,7 +9,7 @@
 * `dtmax`: maximum date allowed to check for bdays in bdays set. Defaults to `max(bdays...)`.
 * `cache`: instance of HolidayCalendarCache.
 """
-mutable struct MarketCalendar <: BusinessDays.HolidayCalendar
+struct MarketCalendar <: BusinessDays.HolidayCalendar
     bdays::Vector{Date}
     dtmin::Date
     dtmax::Date
@@ -42,7 +42,11 @@ function MarketCalendar(bdays::Vector{Date}, dtmin::Date=min(bdays...), dtmax::D
     return market_calendar
 end
 
-@inline BusinessDays.checkbounds(cal::MarketCalendar, dt::Date) = @assert cal.dtmin <= dt && dt <= cal.dtmax "Date out of calendar bounds: $dt. Allowed dates interval is from $(cal.dtmin) to $(cal.dtmax)."
+function BusinessDays.checkbounds(cal::MarketCalendar, dt::Date)
+    if dt < cal_dt_min(cal)  || dt > cal_dt_max(cal)
+        throw(AssertionError("Date out of calendar bounds: $dt. Allowed dates interval is from $(cal.dtmin) to $(cal.dtmax)."))
+    end
+end
 
 @inline BusinessDays._linenumber(cal::MarketCalendar, dt::Date) = Dates.days(dt) - Dates.days(cal.dtmin) + 1
 

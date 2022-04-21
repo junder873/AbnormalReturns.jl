@@ -1,21 +1,21 @@
 
-struct BasicReg{L,R} <: RegressionModel
+struct BasicReg{L,R, N} <: RegressionModel
     nobs::Int
     formula::FormulaTerm{L,R}
-    coef::Vector{Float64}
-    coefnames::Vector{String}
+    coef::SVector{N, Float64}
+    coefnames::SVector{N, String}
     yname::String
     tss::Float64
     rss::Float64
     residuals::Union{Vector{Float64}, Nothing}
-    function BasicReg(nobs, formula::FormulaTerm{L,R}, coef, coefnames, yname, tss, rss, residuals) where {L,R}
+    function BasicReg(nobs, formula::FormulaTerm{L,R}, coef::SVector{N}, coefnames::SVector{N}, yname, tss, rss, residuals) where {L,R,N}
         # @assert rss >= 0 "Residual sum of squares must be greater than 0"
         # @assert tss >= 0 "Total sum of squares must be greater than 0"
         # @assert nobs >= 0 "Observations must be greater than 0"
         # @assert length(coef) == length(coefnames) "Number of coefficients must be same as number of coefficient names"
-        new{L,R}(nobs, formula, coef, coefnames, yname, tss, rss, residuals)
+        new{L,R,N}(nobs, formula, coef, coefnames, yname, tss, rss, residuals)
     end
-    BasicReg(x::Int, f::FormulaTerm{L,R}) where {L, R} = new{L,R}(x, f)
+    BasicReg(x::Int, f::FormulaTerm{L,R}, N) where {L, R} = new{L,R,N}(x, f)
 end
 
 # These are created to minimize the amount of allocations Julia does

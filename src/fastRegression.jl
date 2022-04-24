@@ -1,5 +1,5 @@
 
-struct BasicReg{L,R, N} <: RegressionModel
+struct BasicReg{L, R, N} <: RegressionModel
     nobs::Int
     formula::FormulaTerm{L,R}
     coef::SVector{N, Float64}
@@ -15,118 +15,9 @@ struct BasicReg{L,R, N} <: RegressionModel
         # @assert length(coef) == length(coefnames) "Number of coefficients must be same as number of coefficient names"
         new{L,R,N}(nobs, formula, coef, coefnames, yname, tss, rss, residuals)
     end
-    BasicReg(x::Int, f::FormulaTerm{L,R}, N) where {L, R} = new{L,R,N}(x, f)
+    BasicReg(x::Int, f::FormulaTerm{L,R}) where {L, R} = new{L,R,length(f.rhs)}(x, f)
 end
 
-# These are created to minimize the amount of allocations Julia does
-# Julia typically allocates a vector for each loop, which when using
-# so many loops, can create real garbage collection problems
-# As it turns out, doing sum(abs2, resp - mean(resp)) also does
-# an allocation, which could mean allocating a huge amount
-# caluclating rss was even worse, so these functions are only
-# meant to be used internally but do not allocate if passed a view
-function calc_tss(resp)
-    out = 0.0
-    m = mean(resp)
-    @simd for x in resp
-        out += (x - m) ^ 2
-    end
-    out
-end
-function fast_pred(pred, coef, i)
-    out = 0.0
-    @simd for j in 1:length(coef)
-        @inbounds out += pred[i, j] * coef[j]
-    end
-    out
-end
-function calc_rss(resp, pred, coef)
-    out = 0.0
-    @simd for i in 1:length(resp)
-        @inbounds out += (resp[i] - fast_pred(pred, coef, i)) ^ 2
-    end
-    out
-end
-
-function mul_vec(x, y)
-    out = 0.0
-    @simd for i in 1:length(x)
-        @inbounds out += x[i] * y[i]
-    end
-    out
-end
-function square_mult(x)
-    cols = size(x, 2)
-    out = zeros((cols, cols))
-    for i in 1:cols
-        for j in 1:i
-            @views out[i, j] = mul_vec(
-                x[:, i],
-                x[:, j]
-            )
-        end
-    end
-    for i in 1:cols
-        for j in 1:i-1
-            out[j, i] = out[i, j]
-        end
-    end
-
-    out
-end
-
-function second_mult(x, y)
-    cols = size(x, 2)
-    out = zeros(cols)
-    for i in 1:cols
-        @views out[i] = mul_vec(
-            x[:, i],
-            y
-        )
-    end
-    out
-end
-function quick_cholesky(x; l=size(x, 1))
-    #out = zeros((l, l))
-    for i in 1:l
-        for j in 1:i
-            sum1 = 0.0
-            @simd for k in 1:j-1
-                sum1 += x[j, k] * x[i, k]
-            end
-            if j == i
-                @inbounds x[j, j] = sqrt(x[j, j] - sum1)
-            else
-                if x[j, j] > 0
-                    @inbounds x[i, j] = (x[i, j] - sum1) / x[j, j]
-                end
-            end
-        end
-    end
-    LowerTriangular(x)
-    #out
-end
-function my_ldiv!(L::LowerTriangular, y)
-    for i in 1:length(y)
-        sum1 = 0.0
-        @simd for j in 1:i-1
-            sum1 += L[i, j] * y[j]
-        end
-        y[i] = (y[i] - sum1) / L[i, i]
-    end
-    y
-end
-
-function my_ldiv!(L::UpperTriangular, y)
-    for i in length(y):-1:1
-        sum1 = 0.0
-        @simd for j in length(y):-1:i+1
-            sum1 += L[i, j] * y[j]
-        end
-        y[i] = (y[i] - sum1) / L[i, i]
-    end
-    y
-end
 
 """
     function BasicReg(
@@ -157,20 +48,18 @@ a minimum number of allocations if views of vectors are passed.
 """
 function BasicReg(
     resp::AbstractVector{Float64},
-    pred::AbstractMatrix{Float64},
+    pred::FixedWidthMatrix{N},
     yname::String,
-    xnames::Vector{String},
-    f::FormulaTerm{L,R};
+    xnames::SVector{N, String},
+    f::FormulaTerm{L, R};
     save_residuals::Bool=false,
     minobs=1
-)::BasicReg{L,R} where {L,R}
-    if length(resp) <= size(pred, 2) || length(resp) < minobs
-        return BasicReg(length(resp), f)
+)::BasicReg{L, R, N} where {L, R, N}
+    if length(resp) <= size(pred)[2] || length(resp) < minobs
+        return BasicReg{N}(length(resp), f)
     end
 
-    chols = quick_cholesky(square_mult(pred))
-    coef = my_ldiv!(chols', my_ldiv!(chols, second_mult(pred, resp)))
-    #coef = cholesky!(Symmetric(pred' * pred)) \ (pred' * resp)
+    coef = cholesky(pred' * pred) \ (pred' * resp)
 
     BasicReg(
         length(resp),
@@ -194,13 +83,13 @@ end
 
 function create_pred_matrix(data::TimelineTable{true}, sch)
     # This allows missing to make sure all dates are in the data
-
-    mat = modelcols(sch.rhs, data)
-    DataMatrix(
-        mat,
-        data_dates(data),
-        calendar(data)
-    )
+    datavector_modelcols(sch.rhs, data)
+    # mat = modelcols(sch.rhs, data)
+    # DataMatrix(
+    #     mat,
+    #     data_dates(data),
+    #     calendar(data)
+    # )
 end
 
 """
@@ -240,19 +129,34 @@ function quick_reg(
 ) where {V<:Real}
 
     if !StatsModels.omitsintercept(f) & !StatsModels.hasintercept(f)
-        f = FormulaTerm(f.lhs, InterceptTerm{true}() + f.rhs)
+        return quick_reg(
+            data,
+            FormulaTerm(f.lhs, InterceptTerm{true}() + f.rhs);
+            minobs,
+            save_residuals
+        )
     end
     sch = apply_schema(f, schema(f, data))
     select!(data, internal_termvars(sch))
 
     
-    resp, pred = modelcols(sch, data)
-    yname, xnames = coefnames(sch)
+    resp = datavector_modelcols(sch.lhs, data)
+    pred = datavector_modelcols(sch.rhs, data)
+    if nnz(data_missing_bdays(data)) == 0
+        y = view(resp, norm_dates(data))
+        x = FixedWidthMatrix(pred, norm_dates(data))
+    else
+        new_mssngs = get_missing_bdays(data, norm_dates(data))
+        y = view(resp, norm_dates(data), new_mssngs)
+        x = FixedWidthMatrix(pred, norm_dates(data), new_mssngs)
+    end
+    yname = coefnames(sch.lhs)
+    xnames2 = SVector{length(sch.rhs.terms)}(coefnames(sch.rhs))
     BasicReg(
-        resp,
-        pred,
+        y,
+        x,
         yname,
-        xnames,
+        xnames2,
         f;
         save_residuals,
         minobs=adjust_minobs(minobs, calendar(data), norm_dates(data))
@@ -260,17 +164,18 @@ function quick_reg(
 end
 
 function fill_vector_reg!(
-    out_vector::Vector{BasicReg{L,R}},
+    out_vector::Vector{BasicReg{L,R,N}},
     iter_data::IterateTimelineTable{T},
-    cache::DataMatrix,
+    cache::NTuple{N, DataVector},
     sch::FormulaTerm,
     f::FormulaTerm{L,R};
     save_residuals::Bool=false,
     minobs=0.8
-) where {T, L, R}
+) where {T, L, R, N}
     @assert validate_iterator(iter_data, out_vector) "Length of out_vector does not match the number of indexes in the iterator"
     cols = internal_termvars(sch)
     yname, xnames = coefnames(sch)
+    xnames2 = SVector{N}(xnames)
     
     Threads.@threads for (u_id, iter_indexes) in iter_data
         data = parent(iter_data)[u_id, cols, AllowMissing{true}]
@@ -278,18 +183,18 @@ function fill_vector_reg!(
         for iter in iter_indexes
             cur_dates = dates_min_max(data_dates(data), iter_dates(iter))
             if nnz(data_missing_bdays(data)) == 0
-                x = view(resp, cur_dates)
-                y = view(cache, cur_dates)
+                y = view(resp, cur_dates)
+                x = FixedWidthMatrix(cache, cur_dates)
             else
                 new_mssngs = get_missing_bdays(data, cur_dates)
-                x = view(resp, cur_dates, new_mssngs)
-                y = view(cache, cur_dates, new_mssngs)
+                y = view(resp, cur_dates, new_mssngs)
+                x = FixedWidthMatrix(cache, cur_dates, new_mssngs)
             end
             @inbounds out_vector[iter_index(iter)] = BasicReg(
-                x,
                 y,
+                x,
                 yname,
-                xnames,
+                xnames2,
                 f;
                 save_residuals,
                 minobs=adjust_minobs(minobs, calendar(parent(data)), iter_dates(iter))

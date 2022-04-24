@@ -117,6 +117,16 @@ mutable struct TimelineTable{Mssng, T, MNames, FNames, N1, N2} <: Tables.Abstrac
     req_dates::ClosedInterval{Date}
 end
 
+function all_unique_obs(firm_ids::AbstractVector, dates::AbstractVector)
+    @assert length(firm_ids) == length(dates) "Length of vectors are not the same"
+    for i in 2:length(firm_ids)
+        @inbounds if firm_ids[i] == firm_ids[i-1] && dates[i] == dates[i-1]
+            return true
+        end
+    end
+    return false
+end
+
 """
     function MarketData(
         df_market,
@@ -193,7 +203,8 @@ function MarketData(
     dropmissing!(df_firms, [id_col, date_col_firms])
     sort!(df_firms, [id_col, date_col_firms])
 
-    if any(nonunique(df_firms, [id_col, date_col_firms]))
+    # since this is sorted, just a single iteration is enough to check
+    if all_unique_obs(df_firms[:, id_col], df_firms[:, date_col_firms])
         @error("There are duplicate id-date rows in the firm data")
     end
 

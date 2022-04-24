@@ -24,11 +24,11 @@ function bh_return(vals::AbstractVector{Union{Missing, Float64}})
     out - 1
 end
 
-function bh_return(pred::AbstractMatrix, coef)
+function bh_return(pred::FixedWidthMatrix{N}, coef::SVector{N}) where {N}
     #@assert size(pred, 2) == length(coef) "Got Matrix of size $(size(pred)) and coefficients of $coef $pred"
     out = 1.0
-    @simd for i in 1:size(pred, 1)
-        out *= (fast_pred(pred, coef, i) + 1)
+    @simd for i in 1:size(pred)[1]
+        out *= (point_pred(pred, coef, i) + 1)
     end
     out - 1
 end
@@ -37,11 +37,11 @@ bhar(resp, pred, coef) = bh_return(resp) - bh_return(pred, coef)
 
 bhar(x::AbstractVector, y::AbstractVector) = bh_return(x) - bh_return(y)
 
-function cumulative_return(pred::AbstractMatrix, coef)
+function cumulative_return(pred::FixedWidthMatrix{N}, coef::SVector{N}) where {N}
     #@assert size(pred, 2) == length(coef) "Got Matrix of size $(size(pred)) and coefficients of $coef $pred"
     out = 0.0
-    @simd for i in 1:size(pred, 1)
-        out += fast_pred(pred, coef, i)
+    @simd for i in 1:size(pred)[1]
+        out += point_pred(pred, coef, i)
     end
     out
 end
@@ -181,8 +181,6 @@ function pred_diff(
     if length(data) < adjust_minobs(minobs, calendar(data), norm_dates(data))
         return missing
     end
-    # since the values in a continuous term of mean/var/min/max are not used here,
-    # this just creates a schema from the available values without
 
     resp, pred = modelcols(sch, data)
     fun(resp, pred, coef(rr))
@@ -253,12 +251,12 @@ end
 function fill_vector_pred!(
     out_vector::Vector{Union{Missing, Float64}},
     iter_data::IterateTimelineTable{T},
-    cache::DataMatrix,
+    cache::NTuple{N, DataVector},
     sch,
-    rrs::Vector{BasicReg{L,R}},
+    rrs::Vector{BasicReg{L, R, N}},
     fun;
     minobs=0.8
-) where {T, L, R}
+) where {T, L, R, N}
     @assert validate_iterator(iter_data, out_vector) "Length of out_vector does not match the number of indexes in the iterator"
     @assert length(out_vector) == length(rrs) "Length of out_vector is not the same as number of regressions"
     cols = internal_termvars(sch)
@@ -270,11 +268,11 @@ function fill_vector_pred!(
             cur_dates = dates_min_max(data_dates(data), iter_dates(iter))
             if nnz(data_missing_bdays(data)) == 0
                 x = view(resp, cur_dates)
-                y = view(cache, cur_dates)
+                y = FixedWidthMatrix(cache, cur_dates)
             else
                 new_mssngs = get_missing_bdays(data, cur_dates)
                 x = view(resp, cur_dates, new_mssngs)
-                y = view(cache, cur_dates, new_mssngs)
+                y = FixedWidthMatrix(cache, cur_dates, new_mssngs)
             end
             
             length(x) < adjust_minobs(minobs, calendar(parent(iter_data)), iter_dates(iter)) && continue
@@ -292,10 +290,10 @@ end
 
 function vector_pred_diff(
     data::IterateTimelineTable,
-    rrs::AbstractVector{BasicReg{L, R}},
+    rrs::AbstractVector{BasicReg{L, R, N}},
     fun;
     minobs=0.8
-) where {L, R}
+) where {L, R, N}
     f = rrs[1].formula
     sch = apply_schema(f, schema(f, parent(data)))
     cache = create_pred_matrix(data, sch)

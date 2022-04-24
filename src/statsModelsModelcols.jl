@@ -97,9 +97,12 @@ end
 function datavector_modelcols(t::AbstractTerm, data::TimelineTable)
     DataVector(
             modelcols(t, data),
-            data_dates(data),
+            norm_dates(data),
             calendar(data)
     )
+end
+function datavector_modelcols(ts::MatrixTerm, data::TimelineTable)
+    datavector_modelcols.(ts.terms, Ref(data))
 end
 
 

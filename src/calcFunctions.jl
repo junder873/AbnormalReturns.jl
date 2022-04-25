@@ -470,15 +470,33 @@ function Statistics.std(
     sqrt(var(data, col_firm, col_market; minobs))
 end
 
-
-function get_coefficient_val(rr::RegressionModel, coefname::String...)
-    ismissing(coefnames(rr)) && return missing
+function get_coefficient_pos(rr::RegressionModel, coefname::String...)
     for x in coefname
         if x ∈ coefnames(rr)
-            return coef(rr)[findfirst(x .== coefnames(rr))]
+            return findfirst(x .== coefnames(rr))
         end
     end
     @error("None of $(coefname) is in the RegressionModel model.")
+end
+
+function get_coefficient_val(rr::RegressionModel, coefname::String...)
+    ismissing(coefnames(rr)) && return missing
+    coef(rr)[get_coefficient_pos(rr, coefname...)]
+end
+
+# as an optimization, if all are the same regression, then just find the coefname once
+function get_coefficient_val(rrs::Vector{BasicReg{L, R, N}}, coefname::String...) where {L, R, N}
+    out = Vector{Union{Missing, Float64}}(missing, length(rrs))
+    pos = 0
+    for (i, rr) in enumerate(rrs)
+        if pos == 0 && !ismissing(coefnames(rr))
+            pos = get_coefficient_pos(rr, coefname...)
+        end
+        if pos != 0
+            out[i] = coef(rr)[pos]
+        end
+    end
+    out
 end
 """
     alpha(rr::RegressionModel, coefname::String...="intercept")
@@ -490,6 +508,7 @@ This function finds the position of the coefficient name provided, defaults to "
 If the coefname is not in the regression, then this function returns an error.
 """
 alpha(rr::RegressionModel, coefname::String...="(Intercept)") = get_coefficient_val(rr, coefname...)
+alpha(rrs::Vector{BasicReg{L, R, N}}, coefname::String...="(Intercept)") where {L, R, N} = get_coefficient_val(rrs, coefname...)
 
 
 """
@@ -501,4 +520,5 @@ This is the beta from the estimation period.
 This function finds the position of the coefficient name provided, defaults to several common market returns.
 If the coefname is not in the regression, then this function returns an error.
 """
-beta(rr::RegressionModel, coefname::String...=["mkt", "mktrf", "vwretd", "ewretd"]...) = get_coefficient_val(rr, coefname...)
+beta(rr::RegressionModel, coefname::String...=("mkt", "mktrf", "vwretd", "ewretd")...) = get_coefficient_val(rr, coefname...)
+beta(rrs::Vector{BasicReg{L, R, N}}, coefname::String...=("mkt", "mktrf", "vwretd", "ewretd")...) where {L, R, N} = get_coefficient_val(rrs, coefname...)

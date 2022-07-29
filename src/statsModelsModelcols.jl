@@ -101,8 +101,15 @@ function datavector_modelcols(t::AbstractTerm, data::TimelineTable)
             calendar(data)
     )
 end
-function datavector_modelcols(ts::MatrixTerm, data::TimelineTable)
+function datavector_modelcols(ts::MatrixTerm{Ts}, data::TimelineTable) where {Ts <: Tuple{InterceptTerm{true}, Vararg{ContinuousTerm{Float64}}}}
     datavector_modelcols.(ts.terms, Ref(data))
+end
+function datavector_modelcols(ts::MatrixTerm{Ts}, data::TimelineTable) where {Ts <: Tuple{InterceptTerm{false}, Vararg{ContinuousTerm{Float64}}}}
+    datavector_modelcols.(ts.terms[2:end], Ref(data))
+end
+
+function Base.getindex(data::TimelineTable, col::AbstractTerm)
+    datavector_modelcols(col, data)
 end
 
 

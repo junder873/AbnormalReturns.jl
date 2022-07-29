@@ -117,6 +117,11 @@ mutable struct TimelineTable{Mssng, T, MNames, FNames, N1, N2} <: Tables.Abstrac
     req_dates::ClosedInterval{Date}
 end
 
+"""
+Checks whether each firm_id-date pair is unique, assumes that vectors are sorted by firm_id then date
+
+Returns true if there is at least one firm_id-date pair repeated, false if all are unique
+"""
 function all_unique_obs(firm_ids::AbstractVector, dates::AbstractVector)
     @assert length(firm_ids) == length(dates) "Length of vectors are not the same"
     for i in 2:length(firm_ids)

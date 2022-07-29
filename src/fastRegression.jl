@@ -15,7 +15,7 @@ struct BasicReg{L, R, N} <: RegressionModel
         # @assert length(coef) == length(coefnames) "Number of coefficients must be same as number of coefficient names"
         new{L,R,N}(nobs, formula, coef, coefnames, yname, tss, rss, residuals)
     end
-    BasicReg(x::Int, f::FormulaTerm{L,R}) where {L, R} = new{L,R,length(f.rhs)}(x, f)
+    BasicReg(x::Int, f::FormulaTerm{L,R}, sch) where {L, R} = new{L,R,width(sch.rhs)}(x, f)
 end
 
 
@@ -151,7 +151,7 @@ function quick_reg(
         x = FixedWidthMatrix(pred, norm_dates(data), new_mssngs)
     end
     yname = coefnames(sch.lhs)
-    xnames2 = SVector{length(sch.rhs.terms)}(coefnames(sch.rhs))
+    xnames2 = SVector{width(sch.rhs)}(coefnames(sch.rhs))
     BasicReg(
         y,
         x,
@@ -184,11 +184,11 @@ function fill_vector_reg!(
             cur_dates = dates_min_max(data_dates(data), iter_dates(iter))
             if nnz(data_missing_bdays(data)) == 0
                 y = view(resp, cur_dates)
-                x = FixedWidthMatrix(cache, cur_dates)
+                x = view(cache, cur_dates)
             else
                 new_mssngs = get_missing_bdays(data, cur_dates)
                 y = view(resp, cur_dates, new_mssngs)
-                x = FixedWidthMatrix(cache, cur_dates, new_mssngs)
+                x = view(cache, cur_dates, new_mssngs)
             end
             @inbounds out_vector[iter_index(iter)] = BasicReg(
                 y,
@@ -198,6 +198,43 @@ function fill_vector_reg!(
                 f;
                 save_residuals,
                 minobs=adjust_minobs(minobs, calendar(parent(data)), iter_dates(iter))
+            )
+        end
+    end
+    out_vector
+end
+
+function general_fill_vector!(
+    out_vector::Vector,
+    iter_data::IterateTimelineTable,
+    cache,#NTuple{N,, DataVector}, DataVector, or nothing
+    cols::Vector{TimelineColumn},
+    col1,# TimelineColumn, Symbol, or abstractTerm
+    fun;
+    minobs,
+    kwargs...
+)
+    @assert validate_iterator(iter_data, out_vector) "Length of out_vector does not match the number of indexes in the iterator"
+    Threads.@threads for (u_id, iter_indexes) in iter_data
+        data = parent(iter_data)[u_id, cols, AllowMissing{true}]
+        resp = data[col1]
+        for iter in iter_indexes
+            cur_dates = dates_min_max(data_dates(data), iter_dates(iter))
+            if nnz(data_missing_bdays(data)) == 0
+                single_col = view(resp, cur_dates)
+                cache_cols = view(cache, cur_dates)
+            else
+                new_mssngs = get_missing_bdays(data, cur_dates)
+                single_col = view(resp, cur_dates, new_mssngs)
+                cache_cols = view(cache, cur_dates, new_mssngs)
+            end
+
+            length(single_col) < adjust_minobs(minobs, calendar(parent(iter_data)), iter_dates(iter)) && continue
+
+            @inbounds out_vector[iter_index(iter)] = fun(
+                single_col,
+                cache_cols;
+                kwargs...
             )
         end
     end
@@ -215,25 +252,34 @@ function quick_reg(
     end
     sch = apply_schema(f, schema(f, parent(data)))
     cache = create_pred_matrix(data, sch)
-    out = fill(BasicReg(0, f), total_length(data))
-    fill_vector_reg!(
+    out = fill(BasicReg(0, f, sch), total_length(data))
+    cols = internal_termvars(sch)
+    yname, xnames = coefnames(sch)
+    xnames2 = SVector{N}(xnames)
+    col1 = int_lhs(sch)
+    general_fill_vector!(
         out,
         data,
         cache,
-        sch,
-        f;
+        cols,
+        col1,
+        BasicReg;
         save_residuals,
-        minobs
+        minobs,
+        yname=yname,
+        xnames=xnames2,
+        f=f
     )
 end
 
+StatsBase.predict(mod::BasicReg{L, R, N}, x::FixedWidthMatrix{N}) where {L, R, N} = x * coef(mod)
 StatsBase.predict(mod::BasicReg, x) = x * coef(mod)
 
 StatsBase.coef(x::BasicReg) = isdefined(x, :coef) ? x.coef : missing
 StatsBase.coefnames(x::BasicReg) = isdefined(x, :coef) ? x.coefnames : missing
 StatsBase.responsename(x::BasicReg) = isdefined(x, :coef) ? x.yname : missing
 StatsBase.nobs(x::BasicReg) = x.nobs
-StatsBase.dof_residual(x::BasicReg) = isdefined(x, :coef) ? nobs(x) - length(coef(x)) : missing
+StatsBase.dof_residual(x::BasicReg{L, R, N}) where {L, R, N} = isdefined(x, :coef) ? nobs(x) - N : missing
 StatsBase.r2(x::BasicReg) = 1 - (rss(x) / deviance(x))
 StatsBase.adjr2(x::BasicReg) = 1 - rss(x) / deviance(x) * (nobs(x) - 1) / dof_residual(x)
 StatsBase.islinear(x::BasicReg) = true
@@ -244,7 +290,7 @@ function StatsBase.residuals(x::BasicReg)
         return missing
     end
     if x.residuals === nothing
-        @error("To access residuals, run `cache_reg` with the option `save_residuals=true`")
+        @error("To access residuals, run `quick_reg` with the option `save_residuals=true`")
     else
         x.residuals
     end

@@ -10,8 +10,12 @@ struct FixedWidthMatrix{N, T}
     end
 end
 
-function FixedWidthMatrix(data::NTuple{N, DataVector}, dates::ClosedInterval{Date}) where {N}
-    FixedWidthMatrix(view.(data, Ref(dates)))
+function Base.view(data::NTuple{N, DataVector}, dates::ClosedInterval{Date}) where {N}
+    FixedWidthMatrix(view.(data, Ref(data)))
+end
+
+function Base.view(data::NTuple{N, DataVector}, dates::ClosedInterval{Date}, mssngs::SparseVector{Bool, Int}) where {N}
+    FixedWidthMatrix(view.(data, Ref(data), Ref(mssngs)))
 end
 
 function Base.getindex(data::FixedWidthMatrix{N}, i::Int) where {N}

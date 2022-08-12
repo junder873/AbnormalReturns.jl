@@ -71,6 +71,18 @@ function BusinessDays.listbdays(hc::MarketCalendar, dt0::Date, dt1::Date)
     hc.bdays[dt0 .<= hc.bdays .<= dt1]
 end
 
+function date_range(hc::MarketCalendar, dates::ClosedInterval{Date})
+    BusinessDays.checkbounds(hc, dates.left)
+    BusinessDays.checkbounds(hc, dates.right)
+    s = hc.bdayscounter_array[BusinessDays._linenumber(hc, dates.left)]
+    e = hc.bdayscounter_array[BusinessDays._linenumber(hc, dates.right)] - !isbday(hc, dates.right)
+    s:e
+end
+
+function date_range(hc::MarketCalendar, dt_min::Date, dt_max::Date)
+    date_range(hc, dt_min .. dt_max)
+end
+
 function Base.show(io::IO, cal::MarketCalendar)
     print(io, "MarketCalendar: $(cal.dtmin) .. $(cal.dtmax) with $(sum(cal.isbday_array)) business days")
 end

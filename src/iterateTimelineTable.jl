@@ -7,10 +7,13 @@ end
 iter_index(x::IterateOutput) = x.index
 iter_dates(x::IterateOutput) = x.dates
 
-struct IterateTimelineTable{T, MNames, FNames, N1, N2}
+struct IterateTimelineTable{T, MNames, FNames, N1, N2, NCol}
     parent::MarketData{T, MNames, FNames, N1, N2}
-    index_dict::Dict{T, Vector{IterateOutput}}
-    key_vec::Vector{T}
+    cols::NTuple{NCol, TimelineColumn}
+    key_vect::Vector{T}
+    req_dates::Vector{ClosedInterval{Date}}
+    ranges::Vector{UnitRange{Int}}
+    missing_vects::Vector{Union{Nothing, SparseVector{Bool, Int}}}
     function IterateTimelineTable(data::MarketData{T, MNames, FNames, N1, N2}, index_dict, key_vec) where {T, MNames, FNames, N1, N2}
         @assert Set(key_vec) ⊆ Set(keys(index_dict)) "Some Keys are Missing"
         @assert Set(keys(index_dict)) ⊆ Set(keys(data.firmdata)) "Some Keys are not in the Parent Data"

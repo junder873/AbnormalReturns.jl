@@ -6,6 +6,10 @@ function dates_min_max(date1::ClosedInterval{Date}, date2::ClosedInterval{Date})
     max(dt_min(date1), dt_min(date2)) .. min(dt_max(date1), dt_max(date2))
 end
 
+function range_available(ranges::UnitRange{Int}...)
+    max(first.(ranges)) .. min(last.(ranges))
+end
+
 function check_col(x::Symbol, g1, g2)
     x ∈ g1 || x ∈ g2
 end

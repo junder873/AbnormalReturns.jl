@@ -13,6 +13,7 @@ ds_events=filereader(joinpath("data","event_dates.csv"),types = Dict(2:6 .=>Date
 
 
 @time IMD.leftjoin!(ds_firm, ds_mkt[!, [:date]], on = :date, obs_id = [false, true])
+# CPU: Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz
 # 9.554551 seconds (18.55 M allocations: 3.019 GiB, 5.20% gc time, 59.21% compilation time)
 # 1 threads second run: 2.472221 seconds (81.86 k allocations: 1.508 GiB, 9.02% gc time, 1.41% compilation time)
 # 4 threads:  7.670734 seconds (24.06 M allocations: 3.323 GiB, 7.50% gc time, 83.31% compilation time)

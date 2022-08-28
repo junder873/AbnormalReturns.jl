@@ -72,12 +72,32 @@ function BusinessDays.listbdays(hc::MarketCalendar, dt0::Date, dt1::Date)
 end
 
 function date_range(hc::MarketCalendar, dates::ClosedInterval{Date})
-    BusinessDays.checkbounds(hc, dates.left)
-    BusinessDays.checkbounds(hc, dates.right)
-    s = hc.bdayscounter_array[BusinessDays._linenumber(hc, dates.left)]
-    e = hc.bdayscounter_array[BusinessDays._linenumber(hc, dates.right)] - !isbday(hc, dates.right)
-    s:e
+    date_pos(hc, dates.left):date_pos(hc, dates.right, true)
 end
+
+function date_range(hc::MarketCalendar, dates::ClosedInterval{Vector{Date}})
+    @assert length(dates.left) == length(dates.right) "Date sets are not equal length"
+    BusinessDays.checkbounds(hc, minimum(dates.left))
+    BusinessDays.checkbounds(hc, maximum(dates.left))
+    BusinessDays.checkbounds(hc, minimum(dates.right))
+    BusinessDays.checkbounds(hc, maximum(dates.right))
+    out = Vector{UnitRange{Int}}(undef, length(dates.left))
+    @inbounds for i in eachindex(dates.left, dates.right)
+        out[i] = date_pos(hc, dates.left[i]; perform_check=false):date_pos(hc, dates.right[i], true; perform_check=false)
+    end
+    out
+end
+
+function date_pos(hc::MarketCalendar, date::Date, sub_end=false; perform_check=true)
+    perform_check && BusinessDays.checkbounds(hc, date)
+    v = hc.bdayscounter_array[BusinessDays._linenumber(hc, date)]
+    if sub_end && !isbday(hc, date)
+        v - 1
+    else
+        v
+    end
+end
+
 
 function date_range(hc::MarketCalendar, dt_min::Date, dt_max::Date)
     date_range(hc, dt_min .. dt_max)

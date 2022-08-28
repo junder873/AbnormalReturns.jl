@@ -68,7 +68,7 @@ end
 function mult_add(x::AbstractVector{T}, y::AbstractVector{T}) where {T}
     @assert length(x) == length(y) "Vectors are not the same length"
     out = zero(T)
-    @simd for i in 1:length(x)
+    @simd for i in eachindex(x, y)
         @inbounds out += x[i] * y[i]
     end
     out

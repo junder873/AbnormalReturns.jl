@@ -10,11 +10,13 @@ df_events = CSV.File(joinpath("data", "event_dates.csv")) |> DataFrame
 
 ##
 @time data = MarketData(df_mkt, df_firm; id_col=:firm_id, valuecols_firms=[:ret])
-# First run R5 3600: 17.334942 seconds (29.90 M allocations: 12.970 GiB, 12.24% gc time, 62.19% compilation time)
-# Second run R5 3600: 7.513322 seconds (687.97 k allocations: 11.436 GiB, 22.34% gc time)
+# First run R5 3600: 20.229416 seconds (34.98 M allocations: 13.211 GiB, 12.81% gc time, 64.56% compilation time)
+# Second run R5 3600: 8.131775 seconds (681.52 k allocations: 11.431 GiB, 26.59% gc time, 0.06% compilation time)
 # First run i7 6700: 30.367487 seconds (29.85 M allocations: 12.966 GiB, 40.87% gc time, 38.86% compilation time)
 # Second run i7 6700: 10.302273 seconds (688.03 k allocations: 11.436 GiB, 22.65% gc time)
 
+##
+data[1, Date(2015) .. Date(2016), [:mkt, :smb, :hml]]
 ##
 df_firm = nothing
 df_mkt = nothing
@@ -49,10 +51,84 @@ end
 
 cols = TimelineColumn.([:ret, :mkt, :smb, :hml, :umd])
 @time @chain df_events[1:1000000, :] begin
-    @rtransform(:reg = quick_reg(data[:firm_id, :est_window_start .. :est_window_end, cols], @formula(ret ~ 0 + mkt + smb + hml + umd)),)
+    @rtransform(:reg = quick_reg(data[:firm_id, :est_window_start .. :est_window_end, cols], @formula(ret ~ 1 + mkt + smb + hml + umd)),)
 end
 # Run R5 3600: 55.141968 seconds (589.18 M allocations: 59.681 GiB, 12.77% gc time, 0.19% compilation time)
 
+##
+x = NTuple{2, Vector{Int}}(([1, 2, 3], [4, 5, 6]))
+##
+const to2 = TimerOutput()
+
+##
+function test_reg(
+    data::TimelineTable{false},# only works if no missing data for multiplication
+    f::FormulaTerm{L, R};
+    minobs::V=0.8,
+    save_residuals::Bool=false,
+    sch=sch
+) where {L, R, V<:Real}
+
+    @timeit to2 "start" if !isa(f.rhs[1], ConstantTerm)#!StatsModels.omitsintercept(f) && !StatsModels.hasintercept(f)
+        f = FormulaTerm(f.lhs, InterceptTerm{true}() + f.rhs)
+        # return test_reg(
+        #     data,
+        #     FormulaTerm(f.lhs, InterceptTerm{true}() + f.rhs);
+        #     minobs,
+        #     save_residuals
+        # )
+    end
+    @timeit to2 "schema" sch = apply_schema(f, sch)
+
+    @timeit to2 "termvars" x = AbnormalReturns.internal_termvars(sch)
+    @timeit to2 "select" select!(data, x)
+    
+    
+    @timeit to2 "modelcols response" resp = AbnormalReturns.datavector_modelcols(sch.lhs, data)
+    @timeit to2 "modelcols pred" pred = AbnormalReturns.datavector_modelcols(sch.rhs, data)
+
+    
+    @timeit to2 "views" if nnz(AbnormalReturns.data_missing_bdays(data)) == 0
+        y = view(resp, AbnormalReturns.norm_dates(data))
+        x = AbnormalReturns.FixedWidthMatrix(pred, AbnormalReturns.norm_dates(data))
+    else
+        new_mssngs = AbnormalReturns.get_missing_bdays(data, AbnormalReturns.norm_dates(data))
+        y = view(resp, AbnormalReturns.norm_dates(data), new_mssngs)
+        x = AbnormalReturns.FixedWidthMatrix(pred, AbnormalReturns.norm_dates(data), new_mssngs)
+    end
+    
+    yname = coefnames(sch.lhs)
+    @timeit to2 "names" xnames2 = SVector{width(sch.rhs)}(coefnames(sch.rhs))
+    
+    @timeit to2 "reg" BasicReg(
+        y,
+        x,
+        yname,
+        xnames2,
+        f;
+        save_residuals,
+        minobs=AbnormalReturns.adjust_minobs(minobs, AbnormalReturns.calendar(data), AbnormalReturns.norm_dates(data))
+    )
+    
+end
+temp_f = @formula(ret ~  mkt + smb + 1 + hml + umd)
+test_reg(data[4400, Date(2003, 10, 7) .. Date(2004, 9, 22), cols], temp_f)
+
+##
+temp_f = term(:f) ~ term(:smb) + ConstantTerm(1)
+apply_schema(temp_f, schema(temp_f, data))
+##
+
+@time @chain df_events[1:1000000, :] begin
+    @rtransform(:reg = test_reg(data[:firm_id, :est_window_start .. :est_window_end, cols], @formula(ret ~ mkt + smb + hml + umd)),)
+end
+
+##
+sch = schema(temp_f, data)
+##
+temp_f = @formula(ret ~ 0 + mkt + smb)
+sch = apply_schema(temp_f, schema(temp_f, data))
+isa(sch.rhs.terms, Tuple{InterceptTerm{false}, Vararg{ContinuousTerm{Float64}}})
 ##
 
 @time @chain df_events[1:1000000, :] begin

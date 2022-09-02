@@ -90,7 +90,7 @@ end
 
 function date_pos(hc::MarketCalendar, date::Date, sub_end=false; perform_check=true)
     perform_check && BusinessDays.checkbounds(hc, date)
-    v = hc.bdayscounter_array[BusinessDays._linenumber(hc, date)]
+    v = hc.bdayscounter_array[BusinessDays._linenumber(hc, date)] |> Int
     if sub_end && !isbday(hc, date)
         v - 1
     else

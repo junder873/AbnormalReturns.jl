@@ -47,14 +47,14 @@ BasicReg is an intentionally simplistic linear regression. It also attempts to p
 a minimum number of allocations if views of vectors are passed.
 """
 function BasicReg(
-    resp::AbstractVector{Float64},
-    pred::FixedWidthMatrix{N},
+    resp::AbstractVector{T},
+    pred::FixedTable{N, T},
     yname::String,
     xnames::SVector{N, String},
     f::FormulaTerm{L, R};
     save_residuals::Bool=false,
     minobs=1
-)::BasicReg{L, R, N} where {L, R, N}
+)::BasicReg{L, R, N} where {L, R, N, T}
     if length(resp) <= size(pred)[2] || length(resp) < minobs
         return BasicReg{N}(length(resp), f)
     end
@@ -73,206 +73,197 @@ function BasicReg(
     )
 end
 
-function create_pred_matrix(data::IterateTimelineTable, sch)
-    id = first(data)[1]
-    create_pred_matrix(
-        parent(data)[id, internal_termvars(sch.rhs), AllowMissing{true}],
-        sch
-    )
+function BasicReg(
+    tab::FixedTable{N},
+    args...;
+    vargs...
+) where {N}
+    BasicReg(tab[:, 1], resp_matrix(tab), args...; vargs...)
 end
 
-function create_pred_matrix(data::TimelineTable{true}, sch)
-    # This allows missing to make sure all dates are in the data
-    datavector_modelcols(sch.rhs, data)
-    # mat = modelcols(sch.rhs, data)
-    # DataMatrix(
-    #     mat,
-    #     data_dates(data),
-    #     calendar(data)
-    # )
-end
-
-"""
-    quick_reg(
-        data::TimelineTable{false},
-        f::FormulaTerm;
-        minobs::Real=0.8,
-        save_residuals::Bool=false
-    )
-
-    quick_reg(
-        data::IterateTimelineTable,
-        f::FormulaTerm;
-        minobs::Real=0.8,
-        save_residuals::Bool=false
-    )
-
-Calculates a linear regression for the supplied data based on the formula (formula from StatsModels.jl).
-Unless the formula explicitly excludes the intercept (i.e., `@formula(y ~ 0 + x)`), an intercept is added.
-
-If `data` is of the type `IterateTimelineTable`, then the formula is applied to each `TimelineTable` in an
-optimized way and returns a `Vector{BasicReg}`.
-
-## Arguments
-- `minobs::Real`: The minimum number of observations to return a completed regression. If less than 1,
-    the value is used as a percentage relative to the total number of business days in the time period.
-    Therefore, the default of 0.8 corresponds to at least 80% of the business days over the time period have values.
-- `save_residuals::Bool=false`: Whether to save the residuals into `BasicReg`, This can have significant performance implications.
 
 
-"""
-function quick_reg(
-    data::TimelineTable{false},# only works if no missing data for multiplication
-    f::FormulaTerm;
-    minobs::V=0.8,
-    save_residuals::Bool=false
-) where {V<:Real}
+# """
+#     quick_reg(
+#         data::TimelineTable{false},
+#         f::FormulaTerm;
+#         minobs::Real=0.8,
+#         save_residuals::Bool=false
+#     )
 
-    if !StatsModels.omitsintercept(f) & !StatsModels.hasintercept(f)
-        return quick_reg(
-            data,
-            FormulaTerm(f.lhs, InterceptTerm{true}() + f.rhs);
-            minobs,
-            save_residuals
-        )
-    end
-    sch = apply_schema(f, schema(f, data))
-    select!(data, internal_termvars(sch))
+#     quick_reg(
+#         data::IterateTimelineTable,
+#         f::FormulaTerm;
+#         minobs::Real=0.8,
+#         save_residuals::Bool=false
+#     )
+
+# Calculates a linear regression for the supplied data based on the formula (formula from StatsModels.jl).
+# Unless the formula explicitly excludes the intercept (i.e., `@formula(y ~ 0 + x)`), an intercept is added.
+
+# If `data` is of the type `IterateTimelineTable`, then the formula is applied to each `TimelineTable` in an
+# optimized way and returns a `Vector{BasicReg}`.
+
+# ## Arguments
+# - `minobs::Real`: The minimum number of observations to return a completed regression. If less than 1,
+#     the value is used as a percentage relative to the total number of business days in the time period.
+#     Therefore, the default of 0.8 corresponds to at least 80% of the business days over the time period have values.
+# - `save_residuals::Bool=false`: Whether to save the residuals into `BasicReg`, This can have significant performance implications.
+
+
+# """
+# function quick_reg(
+#     data::TimelineTable{false},# only works if no missing data for multiplication
+#     f::FormulaTerm;
+#     minobs::V=0.8,
+#     save_residuals::Bool=false
+# ) where {V<:Real}
+
+#     if !StatsModels.omitsintercept(f) & !StatsModels.hasintercept(f)
+#         return quick_reg(
+#             data,
+#             FormulaTerm(f.lhs, InterceptTerm{true}() + f.rhs);
+#             minobs,
+#             save_residuals
+#         )
+#     end
+#     sch = apply_schema(f, schema(f, data))
+#     select!(data, internal_termvars(sch))
 
     
-    resp = datavector_modelcols(sch.lhs, data)
-    pred = datavector_modelcols(sch.rhs, data)
-    if nnz(data_missing_bdays(data)) == 0
-        y = view(resp, norm_dates(data))
-        x = FixedWidthMatrix(pred, norm_dates(data))
-    else
-        new_mssngs = get_missing_bdays(data, norm_dates(data))
-        y = view(resp, norm_dates(data), new_mssngs)
-        x = FixedWidthMatrix(pred, norm_dates(data), new_mssngs)
-    end
-    yname = coefnames(sch.lhs)
-    xnames2 = SVector{width(sch.rhs)}(coefnames(sch.rhs))
-    BasicReg(
-        y,
-        x,
-        yname,
-        xnames2,
-        f;
-        save_residuals,
-        minobs=adjust_minobs(minobs, calendar(data), norm_dates(data))
-    )
-end
+#     resp = datavector_modelcols(sch.lhs, data)
+#     pred = datavector_modelcols(sch.rhs, data)
+#     if nnz(data_missing_bdays(data)) == 0
+#         y = view(resp, norm_dates(data))
+#         x = FixedWidthMatrix(pred, norm_dates(data))
+#     else
+#         new_mssngs = get_missing_bdays(data, norm_dates(data))
+#         y = view(resp, norm_dates(data), new_mssngs)
+#         x = FixedWidthMatrix(pred, norm_dates(data), new_mssngs)
+#     end
+#     yname = coefnames(sch.lhs)
+#     xnames2 = SVector{width(sch.rhs)}(coefnames(sch.rhs))
+#     BasicReg(
+#         y,
+#         x,
+#         yname,
+#         xnames2,
+#         f;
+#         save_residuals,
+#         minobs=adjust_minobs(minobs, calendar(data), norm_dates(data))
+#     )
+# end
 
-function fill_vector_reg!(
-    out_vector::Vector{BasicReg{L,R,N}},
-    iter_data::IterateTimelineTable{T},
-    cache::NTuple{N, DataVector},
-    sch::FormulaTerm,
-    f::FormulaTerm{L,R};
-    save_residuals::Bool=false,
-    minobs=0.8
-) where {T, L, R, N}
-    @assert validate_iterator(iter_data, out_vector) "Length of out_vector does not match the number of indexes in the iterator"
-    cols = internal_termvars(sch)
-    yname, xnames = coefnames(sch)
-    xnames2 = SVector{N}(xnames)
+# function fill_vector_reg!(
+#     out_vector::Vector{BasicReg{L,R,N}},
+#     iter_data::IterateTimelineTable{T},
+#     cache::NTuple{N, DataVector},
+#     sch::FormulaTerm,
+#     f::FormulaTerm{L,R};
+#     save_residuals::Bool=false,
+#     minobs=0.8
+# ) where {T, L, R, N}
+#     @assert validate_iterator(iter_data, out_vector) "Length of out_vector does not match the number of indexes in the iterator"
+#     cols = internal_termvars(sch)
+#     yname, xnames = coefnames(sch)
+#     xnames2 = SVector{N}(xnames)
     
-    Threads.@threads for (u_id, iter_indexes) in iter_data
-        data = parent(iter_data)[u_id, cols, AllowMissing{true}]
-        resp = datavector_modelcols(int_lhs(sch), data)
-        for iter in iter_indexes
-            cur_dates = dates_min_max(data_dates(data), iter_dates(iter))
-            if nnz(data_missing_bdays(data)) == 0
-                y = view(resp, cur_dates)
-                x = view(cache, cur_dates)
-            else
-                new_mssngs = get_missing_bdays(data, cur_dates)
-                y = view(resp, cur_dates, new_mssngs)
-                x = view(cache, cur_dates, new_mssngs)
-            end
-            @inbounds out_vector[iter_index(iter)] = BasicReg(
-                y,
-                x,
-                yname,
-                xnames2,
-                f;
-                save_residuals,
-                minobs=adjust_minobs(minobs, calendar(parent(data)), iter_dates(iter))
-            )
-        end
-    end
-    out_vector
-end
+#     Threads.@threads for (u_id, iter_indexes) in iter_data
+#         data = parent(iter_data)[u_id, cols, AllowMissing{true}]
+#         resp = datavector_modelcols(int_lhs(sch), data)
+#         for iter in iter_indexes
+#             cur_dates = dates_min_max(data_dates(data), iter_dates(iter))
+#             if nnz(data_missing_bdays(data)) == 0
+#                 y = view(resp, cur_dates)
+#                 x = view(cache, cur_dates)
+#             else
+#                 new_mssngs = get_missing_bdays(data, cur_dates)
+#                 y = view(resp, cur_dates, new_mssngs)
+#                 x = view(cache, cur_dates, new_mssngs)
+#             end
+#             @inbounds out_vector[iter_index(iter)] = BasicReg(
+#                 y,
+#                 x,
+#                 yname,
+#                 xnames2,
+#                 f;
+#                 save_residuals,
+#                 minobs=adjust_minobs(minobs, calendar(parent(data)), iter_dates(iter))
+#             )
+#         end
+#     end
+#     out_vector
+# end
 
-function general_fill_vector!(
-    out_vector::Vector,
-    iter_data::IterateTimelineTable,
-    cache,#NTuple{N,, DataVector}, DataVector, or nothing
-    cols::Vector{TimelineColumn},
-    col1,# TimelineColumn, Symbol, or abstractTerm
-    fun;
-    minobs,
-    kwargs...
-)
-    @assert validate_iterator(iter_data, out_vector) "Length of out_vector does not match the number of indexes in the iterator"
-    Threads.@threads for (u_id, iter_indexes) in iter_data
-        data = parent(iter_data)[u_id, cols, AllowMissing{true}]
-        resp = data[col1]
-        for iter in iter_indexes
-            cur_dates = dates_min_max(data_dates(data), iter_dates(iter))
-            if nnz(data_missing_bdays(data)) == 0
-                single_col = view(resp, cur_dates)
-                cache_cols = view(cache, cur_dates)
-            else
-                new_mssngs = get_missing_bdays(data, cur_dates)
-                single_col = view(resp, cur_dates, new_mssngs)
-                cache_cols = view(cache, cur_dates, new_mssngs)
-            end
+# function general_fill_vector!(
+#     out_vector::Vector,
+#     iter_data::IterateTimelineTable,
+#     cache,#NTuple{N,, DataVector}, DataVector, or nothing
+#     cols::Vector{TimelineColumn},
+#     col1,# TimelineColumn, Symbol, or abstractTerm
+#     fun;
+#     minobs,
+#     kwargs...
+# )
+#     @assert validate_iterator(iter_data, out_vector) "Length of out_vector does not match the number of indexes in the iterator"
+#     Threads.@threads for (u_id, iter_indexes) in iter_data
+#         data = parent(iter_data)[u_id, cols, AllowMissing{true}]
+#         resp = data[col1]
+#         for iter in iter_indexes
+#             cur_dates = dates_min_max(data_dates(data), iter_dates(iter))
+#             if nnz(data_missing_bdays(data)) == 0
+#                 single_col = view(resp, cur_dates)
+#                 cache_cols = view(cache, cur_dates)
+#             else
+#                 new_mssngs = get_missing_bdays(data, cur_dates)
+#                 single_col = view(resp, cur_dates, new_mssngs)
+#                 cache_cols = view(cache, cur_dates, new_mssngs)
+#             end
 
-            length(single_col) < adjust_minobs(minobs, calendar(parent(iter_data)), iter_dates(iter)) && continue
+#             length(single_col) < adjust_minobs(minobs, calendar(parent(iter_data)), iter_dates(iter)) && continue
 
-            @inbounds out_vector[iter_index(iter)] = fun(
-                single_col,
-                cache_cols;
-                kwargs...
-            )
-        end
-    end
-    out_vector
-end
+#             @inbounds out_vector[iter_index(iter)] = fun(
+#                 single_col,
+#                 cache_cols;
+#                 kwargs...
+#             )
+#         end
+#     end
+#     out_vector
+# end
 
-function quick_reg(
-    data::IterateTimelineTable,
-    f::FormulaTerm;
-    minobs::V=0.8,
-    save_residuals::Bool=false
-) where {V<:Real}
-    if !StatsModels.omitsintercept(f) & !StatsModels.hasintercept(f)
-        f = FormulaTerm(f.lhs, InterceptTerm{true}() + f.rhs)
-    end
-    sch = apply_schema(f, schema(f, parent(data)))
-    cache = create_pred_matrix(data, sch)
-    out = fill(BasicReg(0, f, sch), total_length(data))
-    cols = internal_termvars(sch)
-    yname, xnames = coefnames(sch)
-    xnames2 = SVector{N}(xnames)
-    col1 = int_lhs(sch)
-    general_fill_vector!(
-        out,
-        data,
-        cache,
-        cols,
-        col1,
-        BasicReg;
-        save_residuals,
-        minobs,
-        yname=yname,
-        xnames=xnames2,
-        f=f
-    )
-end
+# function quick_reg(
+#     data::IterateTimelineTable,
+#     f::FormulaTerm;
+#     minobs::V=0.8,
+#     save_residuals::Bool=false
+# ) where {V<:Real}
+#     if !StatsModels.omitsintercept(f) & !StatsModels.hasintercept(f)
+#         f = FormulaTerm(f.lhs, InterceptTerm{true}() + f.rhs)
+#     end
+#     sch = apply_schema(f, schema(f, parent(data)))
+#     cache = create_pred_matrix(data, sch)
+#     out = fill(BasicReg(0, f, sch), total_length(data))
+#     cols = internal_termvars(sch)
+#     yname, xnames = coefnames(sch)
+#     xnames2 = SVector{N}(xnames)
+#     col1 = int_lhs(sch)
+#     general_fill_vector!(
+#         out,
+#         data,
+#         cache,
+#         cols,
+#         col1,
+#         BasicReg;
+#         save_residuals,
+#         minobs,
+#         yname=yname,
+#         xnames=xnames2,
+#         f=f
+#     )
+# end
 
-StatsBase.predict(mod::BasicReg{L, R, N}, x::FixedWidthMatrix{N}) where {L, R, N} = x * coef(mod)
+StatsBase.predict(mod::BasicReg{L, R, N}, x::FixedTable{N}) where {L, R, N} = x * coef(mod)
 StatsBase.predict(mod::BasicReg, x) = x * coef(mod)
 
 StatsBase.coef(x::BasicReg) = isdefined(x, :coef) ? x.coef : missing

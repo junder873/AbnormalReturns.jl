@@ -39,3 +39,6 @@ ShiftedArrays.lag(x::Symbol, n::Int=1) = TimelineColumn(x, n)
 
 Base.convert(::Type{Symbol}, x::TimelineColumn) = Symbol(String(x))
 shift_count(x::TimelineColumn) = x.shifts
+
+TimelineColumn(t::StatsModels.LeadLagTerm{<:Any, F}) where {F<:Union{typeof(lead), typeof(lag)}} = F.instance(t.term.sym, t.nsteps)
+TimelineColumn(t::Union{ContinuousTerm, InteractionTerm, FunctionTerm}) = TimelineColumn(coefnames(t))

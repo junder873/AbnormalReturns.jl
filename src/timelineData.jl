@@ -78,7 +78,7 @@ Functions to update some values are:
 - `select!`: changes the `cols` (also updates `dates` and `missing_bdays` if `cols` is different)
 - `AbnormalReturns.update_dates!`: changes `req_dates` (does not update anything else)
 """
-struct FixedTable{N, T, AV <: AbstractVector{T}} <: Tables.AbstractColumns
+struct FixedTable{N, T<:AbstractFloat, AV <: AbstractVector{T}} <: AbstractMatrix{T}
     data::NTuple{N, AV}
     cols::SVector{N, TimelineColumn}
     function FixedTable(xs::NTuple{N, AV}, cols::SVector{N, TimelineColumn}) where {T, N, AV<:AbstractVector{T}}
@@ -96,6 +96,12 @@ function all_equal_length(xs)
     end
     true
 end
+
+#Base.length(data::FixedTable{N}) where {N} = N * length(data[1])
+Base.size(data::FixedTable{N}) where {N} = (length(data[:, 1]), N)
+Base.size(data::Adjoint{X, FixedTable{N}}) where {X, N} = (N, data.parent[1])
+
+LinearAlgebra.adjoint(x::FixedTable{N, T}) where {N, T} = Adjoint{T, typeof(x)}(x)
 
 """
 Checks whether each firm_id-date pair is unique, assumes that vectors are sorted by firm_id then date
@@ -319,7 +325,7 @@ function add_missing_bdays(dates, cal)
     end
     out
 end
-
+get_missing_bdays(data::MarketData{T}, id::T, r::UnitRange{Int}, col::Symbol) where {T} = get_missing_bdays(data, id, r, TimelineColumn(col))
 function get_missing_bdays(data::MarketData{T}, id::T, r::UnitRange{Int}, col::TimelineColumn) where {T}
     mssngs = data_missing_bdays(data[id, col])
     if mssngs === nothing
@@ -397,6 +403,7 @@ function Base.getindex(
     id::T,
     r::UnitRange,
     col::TimelineColumn,
+    missing_bdays::Nothing=nothing
 ) where {T, MNames, FNames}
     if Symbol(col) ∈ MNames
         view(data.marketdata[col], r .+ col.shifts)
@@ -404,6 +411,79 @@ function Base.getindex(
         view(data.firmdata[id][col], r .+ col.shifts)
     end
 end
+
+function Base.getindex(
+    data::MarketData{T, MNames, FNames},
+    id::T,
+    r::UnitRange,
+    col::Symbol,
+    missing_bdays=nothing
+) where {T, MNames, FNames}
+    data[id, r, TimelineColumn(col), missing_bdays]
+end
+
+function Base.getindex(
+    data::MarketData{T},
+    id::T,
+    r::UnitRange,
+    col::Union{Term, ContinuousTerm, StatsModels.LeadLagTerm},
+    missing_bdays=nothing
+) where {T}
+    data[id, r, TimelineColumn(col), missing_bdays]
+end
+
+function Base.getindex(
+    data::MarketData{T},
+    id::T,
+    r::UnitRange,
+    col::InteractionTerm,
+    missing_bdays=nothing
+) where {T}
+    out = fill(1.0, length(r))
+    for t in col.terms
+        out .*= data[id, r, t, missing_bdays]
+    end
+    out = OffsetVector(out, r[1]-1)
+    view(out, r)
+end
+
+function Base.getindex(
+    data::MarketData{T},
+    id::T,
+    r::UnitRange,
+    col::FunctionTerm{Fo, Fa, Names},
+    missing_bdays=nothing
+) where {T, Fo,Fa,Names}
+    out = OffsetVector(col.fanon.((data[id, r, TimelineColumn(t), missing_bdays] for t in Names)...), r[1]-1)
+    view(out, r)
+end
+
+function Base.getindex(
+    data::MarketData{T},
+    id::T,
+    r::UnitRange,
+    cols::CT...;
+    missing_bdays=nothing
+) where {T, CT<:Union{Symbol, TimelineColumn, AbstractTerm}}
+    l = length(cols)
+    FixedTable(
+        NTuple{l}((data[id, r, col, missing_bdays] for col in cols)),
+        SVector{l}(TimelineColumn.(cols))
+    )
+end
+
+function Base.getindex(
+    data::MarketData{T},
+    id::T,
+    dates::ClosedInterval{Date},
+    cols::CT...;
+) where {T, CT<:Union{Symbol, TimelineColumn, AbstractTerm}}
+    all_cols = combine_columns(cols)
+    r = maximin(date_range(calendar(data), dates), interval.(Ref(data), id, all_cols)...)
+    missing_bdays = combine_missing_bdays(get_missing_bdays.(Ref(data), id, Ref(r), all_cols)...)
+    getindex(data, id, r, cols...; missing_bdays)
+end
+
 
 function Base.getindex(
     data::MarketData{T},
@@ -456,13 +536,45 @@ function Base.getindex(
     data[id, dates, cols]
 end
 
+function Base.getindex(
+    data::MarketData{T},
+    id::T,
+    r::UnitRange{Int},
+    f::FormulaTerm,
+    missing_bdays=nothing
+) where {T}
+    # if !StatsModels.omitsintercept(f) & !StatsModels.hasintercept(f)
+    #     FormulaTerm(f.lhs, InterceptTerm{true}() + f.rhs);
+    # end
+    sch = apply_schema(f, schema(f, data))
+    data[
+        id,
+        r,
+        sch.lhs,
+        sch.rhs...,
+        missing_bdays=missing_bdays
+    ]
+end
+
+function Base.getindex(
+    data::MarketData{T},
+    id::T,
+    dates::ClosedInterval{Date},
+    f::FormulaTerm
+) where {T}
+    r = date_range(calendar(data), dates)
+    data[id, r, f]
+end
+
+
 function Base.getindex(data::FixedTable{N}, ::Colon, i::Int) where {N}
     @assert 1 <= i <= N "Column not in data"
     data.data[i]
 end
 
-function Base.getproperty(data::FixedTable, key::Symbol)
-    getfield(data, key)
+function Base.getindex(data::FixedTable{N}, i::Int, j::Int) where {N}
+    @assert 1 <= j <= N "Column not in data"
+    data.data[j][i]
 end
 
 function Base.getindex(
@@ -487,24 +599,8 @@ end
 
 Base.names(x::FixedTable) = x.cols
 
-Tables.istable(::Type{<:FixedTable}) = true
-Tables.columnaccess(::Type{<:FixedTable}) = true
-function Tables.schema(obj::FixedTable{N, T}) where {N, T}
-    Tables.Schema(Tables.columnnames(obj), fill(T, N))
-end
-
-Tables.columns(x::FixedTable) = x
-
-Tables.getcolumn(x::FixedTable, nm::Symbol) = x[:, nm]
-Tables.getcolumn(x::FixedTable, nm::Int) = x[:, nm]
-Tables.getcolumn(x::FixedTable, nm::TimelineColumn) = x[:, nm]
 
 
-
-
-function Tables.columnnames(x::FixedTable)
-    Symbol.(String.(names(x)))
-end
 
 # function Base.length(data::TimelineTable{false})
 #     real_dates = dates_min_max(data_dates(data), norm_dates(data))

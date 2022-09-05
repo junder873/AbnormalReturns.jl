@@ -102,7 +102,7 @@ end
     )
 
     quick_reg(
-        data::IterateTimelineTable,
+        data::IterateFixedTable,
         f::FormulaTerm;
         minobs::Real=0.8,
         save_residuals::Bool=false
@@ -111,7 +111,7 @@ end
 Calculates a linear regression for the supplied data based on the formula (formula from StatsModels.jl).
 Unless the formula explicitly excludes the intercept (i.e., `@formula(y ~ 0 + x)`), an intercept is added.
 
-If `data` is of the type `IterateTimelineTable`, then the formula is applied to each `TimelineTable` in an
+If `data` is of the type `IterateFixedTable`, then the formula is applied to each `TimelineTable` in an
 optimized way and returns a `Vector{BasicReg}`.
 
 ## Arguments

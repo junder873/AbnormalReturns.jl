@@ -1,12 +1,12 @@
 
-struct IterateTimelineTable{T, N, CL<:Union{Symbol, String}, COL<:Union{MatrixTerm, SVector{N, Symbol}}}
+struct IterateFixedTable{T, N, CL<:Union{Symbol, String}, COL<:Union{MatrixTerm, SVector{N, Symbol}}}
     parent::MarketData{T}
     col_names::SVector{N, CL}
     cols::COL
     key_vec::Vector{T}
     ranges::Vector{UnitRange{Int}}
     missing_vecs::Dict{T, Union{Nothing, SparseVector{Bool, Int}}}
-    function IterateTimelineTable(
+    function IterateFixedTable(
         data::MarketData{T},
         col_names::SVector{N, CL},
         cols::COL,
@@ -20,28 +20,28 @@ struct IterateTimelineTable{T, N, CL<:Union{Symbol, String}, COL<:Union{MatrixTe
     end
 end
 
-parent(data::IterateTimelineTable) = data.parent
-iter_id(data::IterateTimelineTable) = data.key_vec
-iter_range(data::IterateTimelineTable) = data.ranges
-iter_missings(data::IterateTimelineTable) = data.missing_vecs
-iter_cols(data::IterateTimelineTable) = data.cols
-iter_col_names(data::IterateTimelineTable) = data.col_names
+parent(data::IterateFixedTable) = data.parent
+iter_id(data::IterateFixedTable) = data.key_vec
+iter_range(data::IterateFixedTable) = data.ranges
+iter_missings(data::IterateFixedTable) = data.missing_vecs
+iter_cols(data::IterateFixedTable) = data.cols
+iter_col_names(data::IterateFixedTable) = data.col_names
 
-function Base.iterate(iter::IterateTimelineTable{T}, state=1) where {T}
+function Base.iterate(iter::IterateFixedTable{T}, state=1) where {T}
     if state > length(iter)
         return nothing
     end
     (iter[state], state+1)
 end
 
-# function Base.eltype(::IterateTimelineTable{T, MNames, FNames, N1, N2}) where {T, MNames, FNames, N1, N2}
+# function Base.eltype(::IterateFixedTable{T, MNames, FNames, N1, N2}) where {T, MNames, FNames, N1, N2}
 #     Tuple{T, Vector{IterateOutput}}
 # end
-function Base.length(iter::IterateTimelineTable)
+function Base.length(iter::IterateFixedTable)
     length(iter.key_vec)
 end
 
-function Base.getindex(data::IterateTimelineTable, i::Int)
+function Base.getindex(data::IterateFixedTable, i::Int)
     #1 <= i <= length(data) || throw(BoundsError(data, i))
     id = iter_id(data)[i]
     r = iter_range(data)[i]
@@ -52,11 +52,11 @@ function Base.getindex(data::IterateTimelineTable, i::Int)
     parent(data)[id, r, iter_cols(data), mssngs, col_names=iter_col_names(data)]
 end
 
-Base.firstindex(data::IterateTimelineTable) = 1
-Base.lastindex(data::IterateTimelineTable) = length(data) 
+Base.firstindex(data::IterateFixedTable) = 1
+Base.lastindex(data::IterateFixedTable) = length(data) 
 
 function validate_iterator(
-    data::IterateTimelineTable,
+    data::IterateFixedTable,
     out_vector::Vector
 )
     all_ids = iter_index.(vcat(values(data.index_dict)...)) |> sort
@@ -102,7 +102,7 @@ function Base.getindex(
         col_names = cols
         final_cols = cols
     end
-    IterateTimelineTable(
+    IterateFixedTable(
         data,
         col_names,
         final_cols,
@@ -124,7 +124,7 @@ function Base.getindex(
 end
 
 
-function Base.show(io::IO, data::IterateTimelineTable)
+function Base.show(io::IO, data::IterateFixedTable)
     println(io, "Iterable set of FixedTable with $(length(data)) unique datapoints")
     show(io, parent(data))
 end

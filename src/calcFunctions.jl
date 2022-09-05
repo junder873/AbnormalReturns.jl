@@ -68,7 +68,7 @@ function bh_return(data::FixedTable{1}; minobs=0.8)
 end
 
 function bh_return(
-    data::IterateTimelineTable{1};
+    data::IterateFixedTable{1};
     minobs=0.8
 )
     out = Vector{Union{Missing, Float64}}(missing, length(data))
@@ -123,7 +123,7 @@ function pred_diff(
 end
 
 function simple_diff(
-    data::IterateTimelineTable{T, 2},
+    data::IterateFixedTable{T, 2},
     fun;
     minobs=0.8
 ) where {T}
@@ -139,7 +139,7 @@ function simple_diff(
 end
 
 function pred_diff(
-    data::IterateTimelineTable{T, N1},
+    data::IterateFixedTable{T, N1},
     rrs::AbstractVector{BasicReg{L, R, N2}},
     fun;
     minobs=0.8
@@ -173,14 +173,14 @@ end
     )
 
     bhar(
-        data::IterateTimelineTable{T, MNames, FNames},
+        data::IterateFixedTable{T, MNames, FNames},
         firm_col=FNames[1],
         mkt_col=MNames[1];
         minobs=0.8
     ) where {T, MNames, FNames}
 
     bhar(
-        data::IterateTimelineTable,
+        data::IterateFixedTable,
         rrs::AbstractVector{<:BasicReg};
         minobs=0.8
     )
@@ -190,10 +190,10 @@ If a regression is passed, then the benchmark is based on the coefficients from 
 in the regression. These are sometimes called Fama-French abnormal returns. Simple abnormal returns use a market index as the benchmark
 (such as the S&P 500 or a value weighted return of all firms).
 
-Similar to constructing the regression, passing an `IterateTimelineTable` will return a Vector and uses a more optimized method.
+Similar to constructing the regression, passing an `IterateFixedTable` will return a Vector and uses a more optimized method.
 """
-bhar(data::Union{IterateTimelineTable, FixedTable}; minobs=0.8) = simple_diff(data, bhar; minobs)
-bhar(data::Union{IterateTimelineTable, FixedTable}, rr; minobs=0.8) = pred_diff(data, rr, bhar; minobs)
+bhar(data::Union{IterateFixedTable, FixedTable}; minobs=0.8) = simple_diff(data, bhar; minobs)
+bhar(data::Union{IterateFixedTable, FixedTable}, rr; minobs=0.8) = pred_diff(data, rr, bhar; minobs)
 
 """
     car(
@@ -210,14 +210,14 @@ bhar(data::Union{IterateTimelineTable, FixedTable}, rr; minobs=0.8) = pred_diff(
     )
 
     car(
-        data::IterateTimelineTable{T, MNames, FNames},
+        data::IterateFixedTable{T, MNames, FNames},
         firm_col=FNames[1],
         mkt_col=MNames[1];
         minobs=0.8
     ) where {T, MNames, FNames}
 
     car(
-        data::IterateTimelineTable,
+        data::IterateFixedTable,
         rrs::AbstractVector{<:BasicReg};
         minobs=0.8
     )
@@ -227,13 +227,13 @@ If a regression is passed, then the benchmark is based on the coefficients from 
 in the regression. These are sometimes called Fama-French abnormal returns. Simple abnormal returns use a market index as the benchmark
 (such as the S&P 500 or a value weighted return of all firms).
 
-Similar to constructing the regression, passing an `IterateTimelineTable` will return a Vector and uses a more optimized method.
+Similar to constructing the regression, passing an `IterateFixedTable` will return a Vector and uses a more optimized method.
 """
-car(data::Union{IterateTimelineTable, FixedTable}; minobs=0.8) = simple_diff(data, car; minobs)
-car(data::Union{IterateTimelineTable, FixedTable}, rr; minobs=0.8) = pred_diff(data, rr, car; minobs)
+car(data::Union{IterateFixedTable, FixedTable}; minobs=0.8) = simple_diff(data, car; minobs)
+car(data::Union{IterateFixedTable, FixedTable}, rr; minobs=0.8) = pred_diff(data, rr, car; minobs)
 
-Statistics.var(data::Union{IterateTimelineTable, FixedTable}; minobs=0.8) = simple_diff(data, var_diff; minobs)
-Statistics.std(data::Union{IterateTimelineTable, FixedTable}; minobs=0.8) = std(var(data; minobs))
+Statistics.var(data::Union{IterateFixedTable, FixedTable}; minobs=0.8) = simple_diff(data, var_diff; minobs)
+Statistics.std(data::Union{IterateFixedTable, FixedTable}; minobs=0.8) = std(var(data; minobs))
 
 
 function get_coefficient_pos(rr::RegressionModel, coefname::String...)

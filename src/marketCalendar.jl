@@ -82,8 +82,8 @@ function date_range(hc::MarketCalendar, dates::ClosedInterval{Vector{Date}})
     BusinessDays.checkbounds(hc, minimum(dates.right))
     BusinessDays.checkbounds(hc, maximum(dates.right))
     out = Vector{UnitRange{Int}}(undef, length(dates.left))
-    @inbounds for i in eachindex(dates.left, dates.right)
-        out[i] = date_pos(hc, dates.left[i]; perform_check=false):date_pos(hc, dates.right[i], true; perform_check=false)
+    Threads.@threads for i in eachindex(dates.left, dates.right)
+        @inbounds out[i] = date_pos(hc, dates.left[i]; perform_check=false):date_pos(hc, dates.right[i], true; perform_check=false)
     end
     out
 end

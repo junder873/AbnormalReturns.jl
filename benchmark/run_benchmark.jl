@@ -12,11 +12,11 @@ df_events = CSV.File(joinpath("data", "event_dates.csv")) |> DataFrame
 @time data = MarketData(df_mkt, df_firm; id_col=:firm_id, valuecols_firms=[:ret])
 # First run R5 3600: 20.229416 seconds (34.98 M allocations: 13.211 GiB, 12.81% gc time, 64.56% compilation time)
 # Second run R5 3600: 8.131775 seconds (681.52 k allocations: 11.431 GiB, 26.59% gc time, 0.06% compilation time)
+# First run R7 5700X: 13.649963 seconds (35.34 M allocations: 13.235 GiB, 14.57% gc time, 64.03% compilation time)
+# Second run R7 5700X: 5.804785 seconds (587.93 k allocations: 11.432 GiB, 29.49% gc time)
 # First run i7 6700: 30.367487 seconds (29.85 M allocations: 12.966 GiB, 40.87% gc time, 38.86% compilation time)
 # Second run i7 6700: 10.302273 seconds (688.03 k allocations: 11.436 GiB, 22.65% gc time)
 
-##
-data[1, Date(2015) .. Date(2016), [:mkt, :smb, :hml]]
 ##
 df_firm = nothing
 df_mkt = nothing
@@ -24,11 +24,11 @@ GC.gc()
 
 ##
 @time df_temp = @chain df_events begin
-    @transform(:reg_mkt = quick_reg(data[:firm_id, :est_window_start .. :est_window_end], @formula(ret ~ mkt)),)
+    @transform(:reg_mkt = quick_reg(data[:firm_id, :est_window_start .. :est_window_end], @formula(ret ~ smb + mkt)),)
     @transform(:reg_ffm = quick_reg(data[:firm_id, :est_window_start .. :est_window_end], @formula(ret ~ mkt + smb + hml + umd)),)
     @transform(
-        :bhar_mkt = AbnormalReturns.bhar(data[:firm_id, :est_window_start .. :est_window_end], :reg_mkt),
-        :bhar_ffm = AbnormalReturns.bhar(data[:firm_id, :est_window_start .. :est_window_end], :reg_ffm),
+        :bhar_mkt = bhar(data[:firm_id, :est_window_start .. :est_window_end, @formula(ret ~ smb + mkt)], :reg_mkt),
+        :bhar_ffm = bhar(data[:firm_id, :est_window_start .. :est_window_end, @formula(ret ~ mkt + smb + hml + umd)], :reg_ffm),
         # :bhar_simple = bhar(data[:firm_id, :est_window_start .. :est_window_end], ^(:ret), ^(:mkt)),
         # :car_simple = car(data[:firm_id, :est_window_start .. :est_window_end], ^(:ret), ^(:mkt))
     )
@@ -37,24 +37,30 @@ GC.gc()
         :var_ffm = var(:reg_ffm),
     )
     @transform(
-        :alpha = alpha(:reg_mkt),
+        #:alpha = alpha(:reg_mkt),
         :beta = beta(:reg_mkt),
     )
 end
 # First run R5 3600: 12.886998 seconds (35.27 M allocations: 4.308 GiB, 13.43% gc time, 70.63% compilation time)
-# Second run R5 3600:  3.537313 seconds (12.73 M allocations: 3.092 GiB, 24.15% gc time, 2.50% compilation time)
+# Second run R5 3600: 3.537313 seconds (12.73 M allocations: 3.092 GiB, 24.15% gc time, 2.50% compilation time)
+# First run R7 5700X: 7.630244 seconds (31.75 M allocations: 3.091 GiB, 14.36% gc time, 79.25% compilation time)
+# Second run R7 5700X: 1.492441 seconds (12.18 M allocations: 2.084 GiB, 23.40% gc time, 4.99% compilation time)
 # First run i7 6700: 17.520028 seconds (26.97 M allocations: 4.145 GiB, 28.89% gc time, 77.12% compilation time)
-# Second run i7 6700:   5.772432 seconds (4.73 M allocations: 2.944 GiB, 44.27% gc time, 1.59% compilation time)
+# Second run i7 6700: 5.772432 seconds (4.73 M allocations: 2.944 GiB, 44.27% gc time, 1.59% compilation time)
 
 ##
 
 
-cols = TimelineColumn.([:ret, :mkt, :smb, :hml, :umd])
 @time @chain df_events[1:1000000, :] begin
-    @rtransform(:reg = quick_reg(data[:firm_id, :est_window_start .. :est_window_end, cols], @formula(ret ~ 1 + mkt + smb + hml + umd)),)
+    @rtransform(:reg = BasicReg(data[:firm_id, :est_window_start .. :est_window_end, @formula(ret ~ mkt + smb + hml + umd)], @formula(ret ~ mkt + smb + hml + umd)),)
 end
 # Run R5 3600: 55.141968 seconds (589.18 M allocations: 59.681 GiB, 12.77% gc time, 0.19% compilation time)
 
+##
+
+@time @chain df_events[1:1000000, :] begin
+    @transform(:reg = BasicReg.(data[:firm_id, :est_window_start .. :est_window_end, @formula(ret ~ mkt + smb + hml + umd)], Ref(@formula(ret ~ mkt + smb + hml + umd))),)
+end
 ##
 x = NTuple{2, Vector{Int}}(([1, 2, 3], [4, 5, 6]))
 ##

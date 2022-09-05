@@ -1,20 +1,22 @@
 
-struct IterateTimelineTable{T, MNames, FNames, N1, N2, CL}
-    parent::MarketData{T, MNames, FNames, N1, N2}
-    cols::CL
+struct IterateTimelineTable{T, N, CL<:Union{Symbol, String}, COL<:Union{MatrixTerm, SVector{N, Symbol}}}
+    parent::MarketData{T}
+    col_names::SVector{N, CL}
+    cols::COL
     key_vec::Vector{T}
     ranges::Vector{UnitRange{Int}}
     missing_vecs::Dict{T, Union{Nothing, SparseVector{Bool, Int}}}
     function IterateTimelineTable(
-        data::MarketData{T, MNames, FNames, N1, N2},
-        cols::CL,
+        data::MarketData{T},
+        col_names::SVector{N, CL},
+        cols::COL,
         key_vec,
         ranges,
         missing_vecs
-    ) where {T, MNames, FNames, N1, N2, CL}
+    ) where {T, N, CL, COL}
         @assert Set(key_vec) ⊆ Set(keys(missing_vecs)) "Some Keys are Missing"
         @assert Set(key_vec) ⊆ Set(keys(data.firmdata)) "Some Keys are not in the Parent Data"
-        new{T, MNames, FNames, N1, N2, CL}(data, cols, key_vec, ranges, missing_vecs)
+        new{T, N, CL, COL}(data, col_names, cols, key_vec, ranges, missing_vecs)
     end
 end
 
@@ -23,8 +25,9 @@ iter_id(data::IterateTimelineTable) = data.key_vec
 iter_range(data::IterateTimelineTable) = data.ranges
 iter_missings(data::IterateTimelineTable) = data.missing_vecs
 iter_cols(data::IterateTimelineTable) = data.cols
+iter_col_names(data::IterateTimelineTable) = data.col_names
 
-function Base.iterate(iter::IterateTimelineTable{T, MNames, FNames}, state=1) where {T, MNames, FNames}
+function Base.iterate(iter::IterateTimelineTable{T}, state=1) where {T}
     if state > length(iter)
         return nothing
     end
@@ -46,7 +49,7 @@ function Base.getindex(data::IterateTimelineTable, i::Int)
     if mssngs !== nothing
         mssngs = mssngs[r]
     end
-    parent(data)[id, r, iter_cols(data)..., missing_bdays=mssngs]
+    parent(data)[id, r, iter_cols(data), mssngs, col_names=iter_col_names(data)]
 end
 
 Base.firstindex(data::IterateTimelineTable) = 1
@@ -64,14 +67,14 @@ function Base.getindex(
     data::MarketData{T},
     ids::Vector{T},
     dates::ClosedInterval{Vector{Date}},
-    cols::Union{Symbol, TimelineColumn, AbstractTerm}...
+    cols
 ) where {T}
     u_ids = unique(ids)
-    unique_cols = combine_columns(cols)
+    #unique_cols = combine_columns(cols)
     rs = date_range(calendar(data), dates)
     range_limits = Dict(
         u_ids .=> [
-            maximin(interval.(Ref(data), id, unique_cols)...) for id in u_ids
+            maximin(interval.(Ref(data), id, cols)...) for id in u_ids
         ]
     )
     for i in eachindex(ids, rs)
@@ -87,26 +90,65 @@ function Base.getindex(
                     Ref(data),
                     id,
                     Ref(range_limits[id]),
-                    unique_cols)...
+                    cols)...
                     ) for id in u_ids]
     )
 
-    new_cols = convert_cols.(cols)
+    #new_cols = convert_cols.(cols)
+    if eltype(cols) <: AbstractTerm
+        col_names = SVector{length(cols)}(coefnames(cols))
+        final_cols = MatrixTerm(cols)
+    else
+        col_names = cols
+        final_cols = cols
+    end
     IterateTimelineTable(
         data,
-        new_cols,
+        col_names,
+        final_cols,
         ids,
         rs,
         mssngs
     )
 end
 
-function Base.getindex(data::MarketData{T}, ids::Vector{T}, dates::ClosedInterval{Vector{Date}}, cols::FormulaTerm) where {T}
-    sch = apply_schema(cols, schema(cols, data))
-    data[ids, dates, sch.lhs, sch.rhs.terms...]
+function Base.getindex(
+    data::MarketData{T},
+    ids::Vector{T},
+    dates::ClosedInterval{Vector{Date}},
+    f::FormulaTerm
+) where {T}
+    sch = apply_schema(f, schema(f, data))
+    out = (sch.lhs, sch.rhs.terms...)
+    data[ids, dates, out]
 end
+
 
 function Base.show(io::IO, data::IterateTimelineTable)
     println(io, "Iterable set of FixedTable with $(length(data)) unique datapoints")
     show(io, parent(data))
+end
+
+function StatsModels.schema(f::FormulaTerm, d::MarketData)
+    StatsModels.Schema(
+        Dict(
+            term.(StatsModels.termvars(f)) .=> ContinuousTerm.(StatsModels.termvars(f), 0.0, 0.0, 0.0, 0.0)
+        )
+    )
+end
+
+function StatsModels.schema(f::FormulaTerm, d::FixedTable)
+    StatsModels.Schema(
+        Dict(
+            term.(StatsModels.termvars(f)) .=> ContinuousTerm.(StatsModels.termvars(f), 0.0, 0.0, 0.0, 0.0)
+        )
+    )
+end
+
+function Base.getindex(
+    data::MarketData{T},
+    ids::Vector{T},
+    dates::ClosedInterval{Vector{Date}},
+) where {T}
+    (data, ids, dates)
 end

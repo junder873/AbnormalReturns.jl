@@ -24,10 +24,10 @@ function check_col(x::Vector{Symbol}, g1)
     any(check_col.(x, Ref(g1)))
 end
 
-adjust_minobs(x::Integer, ::MarketCalendar, ::ClosedInterval{Date}) = x
-function adjust_minobs(x::Real, cal::MarketCalendar, dates::ClosedInterval{Date})
+adjust_minobs(x::Integer, ::FixedTable) = x
+function adjust_minobs(x::Real, data::FixedTable)
     if x < 1
-        (bdayscount(cal, dt_min(dates), dt_max(dates)) .+ isbday(cal, dt_max(dates))) * x
+        data.req_length * x
     else
         x
     end

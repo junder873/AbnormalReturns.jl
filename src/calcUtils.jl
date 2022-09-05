@@ -93,7 +93,7 @@ end
 function resp_matrix(data::FixedTable{N, T, AV}) where {N, T, AV}
     @assert N >= 2 "Not enough columns"
     FixedTable(
-        NTuple{N-1, AV}(data.data[2:end]),
+        SVector{N-1, AV}(data.data[2:end]),
         SVector{N-1}(names(data)[2:end])
     )
 end

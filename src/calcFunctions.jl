@@ -24,9 +24,9 @@ function bh_return(vals::AbstractVector{Union{Missing, Float64}})
     out - 1
 end
 
-function bh_return(pred::FixedWidthMatrix{N}, coef::SVector{N}) where {N}
+function bh_return(pred::FixedTable{N, T}, coef::SVector{N, T}) where {N, T}
     #@assert size(pred, 2) == length(coef) "Got Matrix of size $(size(pred)) and coefficients of $coef $pred"
-    out = 1.0
+    out = zero(T)
     @simd for i in 1:size(pred)[1]
         out *= (point_pred(pred, coef, i) + 1)
     end
@@ -37,9 +37,9 @@ bhar(resp, pred, coef) = bh_return(resp) - bh_return(pred, coef)
 
 bhar(x::AbstractVector, y::AbstractVector) = bh_return(x) - bh_return(y)
 
-function cumulative_return(pred::FixedWidthMatrix{N}, coef::SVector{N}) where {N}
+function cumulative_return(pred::FixedTable{N, T}, coef::SVector{N, T}) where {N, T}
     #@assert size(pred, 2) == length(coef) "Got Matrix of size $(size(pred)) and coefficients of $coef $pred"
-    out = 0.0
+    out = zero(T)
     @simd for i in 1:size(pred)[1]
         out += point_pred(pred, coef, i)
     end
@@ -58,65 +58,23 @@ is calculated for the MARKET_DATA_CACHE.
 
 These functions treat missing returns in the period implicitly as a zero return.
 """
-function bh_return(data::TimelineTable, col; minobs=0.8)
-    col = TimelineColumn(col)
-    select!(data, [col])
-    dates = dates_min_max(norm_dates(data), data_dates(data))
-    if nnz(data_missing_bdays(data)) == 0
-        x = view(data[col], dates)
-    else
-        new_missings = get_missing_bdays(data, dates)
-        x = view(data[col], dates, new_missings)
-    end
-    if length(x) < adjust_minobs(minobs, calendar(data), norm_dates(data))
+function bh_return(data::FixedTable{1}; minobs=0.8)
+    d = data[:, 1]
+    if length(d) < adjust_minobs(minobs, data)
         missing
     else
-        bh_return(x)
+        bh_return(data[:, 1])
     end
-end
-
-function fill_vector_bh_return!(
-    out_vector::Vector{Union{Missing, Float64}},
-    iter_data::IterateTimelineTable,
-    col::TimelineColumn;
-    minobs=0.8
-)
-    @assert validate_iterator(iter_data, out_vector) "Length of out_vector does not match the number of indexes in the iterator"
-
-    Threads.@threads for (u_id, iter_indexes) in iter_data
-        data = parent(iter_data)[u_id, [col], AllowMissing{true}]
-        resp = data[col]
-        for iter in iter_indexes
-            cur_dates = dates_min_max(data_dates(data), iter_dates(iter))
-            if nnz(data_missing_bdays(data)) == 0
-                x = view(resp, cur_dates)
-            else
-                new_mssngs = get_missing_bdays(data, cur_dates)
-                x = view(resp, cur_dates, new_mssngs)
-            end
-            
-            length(x) < adjust_minobs(minobs, calendar(parent(iter_data)), iter_dates(iter)) && continue
-
-            @inbounds out_vector[iter_index(iter)] = bh_return(x)
-
-        end
-    end
-    out_vector
 end
 
 function bh_return(
-    data::IterateTimelineTable,
-    col;
+    data::IterateTimelineTable{1};
     minobs=0.8
 )
-    col = TimelineColumn(col)
-    out = Vector{Union{Missing, Float64}}(missing, total_length(data))
-    fill_vector_bh_return!(
-        out,
-        data,
-        col;
-        minobs
-    )
+    out = Vector{Union{Missing, Float64}}(missing, length(data))
+    Threads.@threads for i in 1:length(data)
+        out[i] = bh_return(data[i], minobs)
+    end
     if any(ismissing.(out))
         out
     else
@@ -124,42 +82,23 @@ function bh_return(
     end
 end
 
-function sum_return(data::TimelineTable, col; minobs=0.8)
-    col = TimelineColumn(col)
-    select!(data, [col])
-    dates = dates_min_max(norm_dates(data), data_dates(data))
-    if nnz(data_missing_bdays(data)) == 0
-        x = view(data[col], dates)
-    else
-        new_missings = get_missing_bdays(data, dates)
-        x = view(data[col], dates, new_missings)
-    end
-    if length(x) < adjust_minobs(minobs, calendar(data), norm_dates(data))
+function sum_return(data::FixedTable{1}; minobs=0.8)
+    d = data[:, 1]
+    if length(d) < adjust_minobs(minobs, data)
         missing
     else
-        sum(x)
+        sum(d)
     end
 end
 
 function simple_diff(
-    data::TimelineTable,
-    firm_col,
-    mkt_col,
+    data::FixedTable{2},
     fun;
     minobs=0.8
 )
-
-    select!(data, [firm_col, mkt_col])
-    dates = dates_min_max(norm_dates(data), data_dates(data))
-    if nnz(data_missing_bdays(data)) == 0
-        x = view(data[firm_col], dates)
-        y = view(data[mkt_col], dates)
-    else
-        new_missings = get_missing_bdays(data, dates)
-        x = view(data[firm_col], dates, new_missings)
-        y = view(data[mkt_col], dates, new_missings)
-    end
-    if length(x) < adjust_minobs(minobs, calendar(data), norm_dates(data))
+    x = data[:, 1]
+    y = data[:, 2]
+    if length(x) < adjust_minobs(minobs, data)
         missing
     else
         fun(x, y)
@@ -167,79 +106,31 @@ function simple_diff(
 end
 
 function pred_diff(
-    data::TimelineTable,
+    data::FixedTable{N1},
     rr::RegressionModel,
     fun;
     minobs::Float64=0.8
-)
+) where {N1}
+    #@assert N1 == N2 + 1 "Dimensions are mismatched"
     if !isdefined(rr, :coef)
         return missing
     end
-    f = rr.formula
-    sch = apply_schema(f, schema(f, data))
-    select!(data, internal_termvars(sch))
-    if length(data) < adjust_minobs(minobs, calendar(data), norm_dates(data))
+    if size(data, 1) < adjust_minobs(minobs, data)
         return missing
+    else
+        fun(data[:, 1], resp_matrix(data), coef(rr))
     end
-
-    resp, pred = modelcols(sch, data)
-    fun(resp, pred, coef(rr))
 end
 
-function fill_vector_simple!(
-    out_vector::Vector{Union{Missing, Float64}},
-    iter_data::IterateTimelineTable,
-    cache::DataVector,
-    col::TimelineColumn,
+function simple_diff(
+    data::IterateTimelineTable{T, 2},
     fun;
     minobs=0.8
-)
-    @assert validate_iterator(iter_data, out_vector) "Length of out_vector does not match the number of indexes in the iterator"
-
-    Threads.@threads for (u_id, iter_indexes) in iter_data
-        data = parent(iter_data)[u_id, [col], AllowMissing{true}]
-        resp = data[col]
-        for iter in iter_indexes
-            cur_dates = dates_min_max(data_dates(data), iter_dates(iter))
-            if nnz(data_missing_bdays(data)) == 0
-                x = view(resp, cur_dates)
-                y = view(cache, cur_dates)
-            else
-                new_mssngs = get_missing_bdays(data, cur_dates)
-                x = view(resp, cur_dates, new_mssngs)
-                y = view(cache, cur_dates, new_mssngs)
-            end
-            
-            length(x) < adjust_minobs(minobs, calendar(parent(iter_data)), iter_dates(iter)) && continue
-
-            @inbounds out_vector[iter_index(iter)] = fun(
-                x,
-                y,
-            )
-
-        end
+) where {T}
+    out = Vector{Union{Missing, Float64}}(missing, length(data))
+    Threads.@threads for i in 1:length(data)
+        out[i] = simple_diff(data[i], fun; minobs)
     end
-    out_vector
-end
-
-function vector_simple_diff(
-    data::IterateTimelineTable,
-    col1::TimelineColumn,
-    col2::TimelineColumn,
-    fun;
-    minobs=0.8
-)
-    cache = parent(data)[first(data)[1], [col2], AllowMissing{true}][col2]
-
-    out = Vector{Union{Missing, Float64}}(missing, total_length(data))
-    fill_vector_simple!(
-        out,
-        data,
-        cache,
-        col1,
-        fun;
-        minobs
-    )
     if any(ismissing.(out))
         out
     else
@@ -247,67 +138,18 @@ function vector_simple_diff(
     end
 end
 
-
-function fill_vector_pred!(
-    out_vector::Vector{Union{Missing, Float64}},
-    iter_data::IterateTimelineTable{T},
-    cache::NTuple{N, DataVector},
-    sch,
-    rrs::Vector{BasicReg{L, R, N}},
+function pred_diff(
+    data::IterateTimelineTable{T, N1},
+    rrs::AbstractVector{BasicReg{L, R, N2}},
     fun;
     minobs=0.8
-) where {T, L, R, N}
-    @assert validate_iterator(iter_data, out_vector) "Length of out_vector does not match the number of indexes in the iterator"
-    @assert length(out_vector) == length(rrs) "Length of out_vector is not the same as number of regressions"
-    cols = internal_termvars(sch)
-    Threads.@threads for (u_id, iter_indexes) in iter_data
-        data = parent(iter_data)[u_id, cols, AllowMissing{true}]
-        resp = datavector_modelcols(int_lhs(sch), data)
-        for iter in iter_indexes
-            isdefined(rrs[iter_index(iter)], :coef) || continue
-            cur_dates = dates_min_max(data_dates(data), iter_dates(iter))
-            if nnz(data_missing_bdays(data)) == 0
-                x = view(resp, cur_dates)
-                y = FixedWidthMatrix(cache, cur_dates)
-            else
-                new_mssngs = get_missing_bdays(data, cur_dates)
-                x = view(resp, cur_dates, new_mssngs)
-                y = FixedWidthMatrix(cache, cur_dates, new_mssngs)
-            end
-            
-            length(x) < adjust_minobs(minobs, calendar(parent(iter_data)), iter_dates(iter)) && continue
-
-            @inbounds out_vector[iter_index(iter)] = fun(
-                x,
-                y,
-                coef(rrs[iter_index(iter)])
-            )
-
-        end
+) where {L, R, N1, N2, T}
+    @assert N1 == N2 + 1 "Dimensions are mismatched"
+    @assert length(data) == length(rrs) "Vectors are not the same length"
+    out = Vector{Union{Missing, Float64}}(missing, length(data))
+    Threads.@threads for i in 1:length(data)
+        out[i] = pred_diff(data[i], rrs[i], fun; minobs)
     end
-    out_vector
-end
-
-function vector_pred_diff(
-    data::IterateTimelineTable,
-    rrs::AbstractVector{BasicReg{L, R, N}},
-    fun;
-    minobs=0.8
-) where {L, R, N}
-    f = rrs[1].formula
-    sch = apply_schema(f, schema(f, parent(data)))
-    cache = create_pred_matrix(data, sch)
-
-    out = Vector{Union{Missing, Float64}}(missing, total_length(data))
-    fill_vector_pred!(
-        out,
-        data,
-        cache,
-        sch,
-        rrs,
-        fun;
-        minobs
-    )
     if any(ismissing.(out))
         out
     else
@@ -350,39 +192,8 @@ in the regression. These are sometimes called Fama-French abnormal returns. Simp
 
 Similar to constructing the regression, passing an `IterateTimelineTable` will return a Vector and uses a more optimized method.
 """
-function bhar(
-    data::TimelineTable{Mssng, T, MNames, FNames},
-    firm_col=FNames[1],
-    mkt_col=MNames[1];
-    minobs=0.8
-) where {Mssng, T, MNames, FNames}
-    simple_diff(data, TimelineColumn(firm_col), TimelineColumn(mkt_col), bhar; minobs)
-end
-
-function bhar(
-    data::TimelineTable,
-    rr::RegressionModel;
-    minobs=0.8
-)
-    pred_diff(data, rr, bhar; minobs)
-end
-
-function bhar(
-    data::IterateTimelineTable{T, MNames, FNames},
-    firm_col=FNames[1],
-    mkt_col=MNames[1];
-    minobs=0.8
-) where {T, MNames, FNames}
-    vector_simple_diff(data, TimelineColumn(firm_col), TimelineColumn(mkt_col), bhar; minobs)
-end
-
-function bhar(
-    data::IterateTimelineTable,
-    rrs::AbstractVector{<:BasicReg};
-    minobs=0.8
-)
-    vector_pred_diff(data, rrs, bhar; minobs)
-end
+bhar(data::Union{IterateTimelineTable, FixedTable}; minobs=0.8) = simple_diff(data, bhar; minobs)
+bhar(data::Union{IterateTimelineTable, FixedTable}, rr; minobs=0.8) = pred_diff(data, rr, bhar; minobs)
 
 """
     car(
@@ -418,57 +229,12 @@ in the regression. These are sometimes called Fama-French abnormal returns. Simp
 
 Similar to constructing the regression, passing an `IterateTimelineTable` will return a Vector and uses a more optimized method.
 """
-function car(
-    data::TimelineTable{Mssng, T, MNames, FNames},
-    firm_col=FNames[1],
-    mkt_col=MNames[1];
-    minobs=0.8
-) where {Mssng, T, MNames, FNames}
-    simple_diff(data, TimelineColumn(firm_col), TimelineColumn(mkt_col), car; minobs)
-end
+car(data::Union{IterateTimelineTable, FixedTable}; minobs=0.8) = simple_diff(data, car; minobs)
+car(data::Union{IterateTimelineTable, FixedTable}, rr; minobs=0.8) = pred_diff(data, rr, car; minobs)
 
-function car(
-    data::TimelineTable,
-    rr::RegressionModel;
-    minobs=0.8
-)
-    pred_diff(data, rr, car; minobs)
-end
+Statistics.var(data::Union{IterateTimelineTable, FixedTable}; minobs=0.8) = simple_diff(data, var_diff; minobs)
+Statistics.std(data::Union{IterateTimelineTable, FixedTable}; minobs=0.8) = std(var(data; minobs))
 
-function car(
-    data::IterateTimelineTable{T, MNames, FNames},
-    firm_col=FNames[1],
-    mkt_col=MNames[1];
-    minobs=0.8
-) where {T, MNames, FNames}
-    vector_simple_diff(data, TimelineColumn(firm_col), TimelineColumn(mkt_col), car; minobs)
-end
-
-function car(
-    data::IterateTimelineTable{T},
-    rrs::AbstractVector{<:BasicReg};
-    minobs=0.8
-) where {T}
-    vector_pred_diff(data, rrs, car; minobs)
-end
-
-function Statistics.var(
-    data::TimelineTable{Mssng, T, MNames, FNames},
-    firm_col=FNames[1],
-    mkt_col=MNames[1];
-    minobs=0.8
-) where {Mssng, T, MNames, FNames}
-    simple_diff(data, TimelineColumn(firm_col), TimelineColumn(mkt_col), var_diff; minobs)
-end
-
-function Statistics.std(
-    data::TimelineTable{Mssng, T, MNames, FNames},
-    firm_col=FNames[1],
-    mkt_col=MNames[1];
-    minobs=0.8
-) where {Mssng, T, MNames, FNames}
-    sqrt(var(data, col_firm, col_market; minobs))
-end
 
 function get_coefficient_pos(rr::RegressionModel, coefname::String...)
     for x in coefname

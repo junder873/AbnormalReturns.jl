@@ -52,13 +52,11 @@ export lag, lead
 ##############################################################################
 
 include("marketCalendar.jl")
-include("timelineColumn.jl")
 include("timelineData.jl")
 include("utils.jl")
 include("calcUtils.jl")
 include("iterateTimelineTable.jl")
 include("fastRegression.jl")
-# include("calcFunctions.jl")
-include("statsModelsModelcols.jl")
+include("calcFunctions.jl")
 
 end

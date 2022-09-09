@@ -91,9 +91,9 @@ function Base.:(*)(x::Adjoint{T, <:FixedTable{N, T}}, y::AbstractVector{T}) wher
 end
 
 function resp_matrix(data::FixedTable{N, T, AV}) where {N, T, AV}
-    @assert N >= 2 "Not enough columns"
+    #@assert N >= 2 "Not enough columns"
     FixedTable(
-        SVector{N-1, AV}(data.data[2:end]),
-        SVector{N-1}(names(data)[2:end])
+        SVector{N-1, AV}(data[:, i] for i in 2:N),
+        SVector{N-1}(names(data)[i] for i in 2:N)
     )
 end

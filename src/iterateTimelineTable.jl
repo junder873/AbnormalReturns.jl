@@ -6,17 +6,20 @@ struct IterateFixedTable{T, N, CL<:Union{Symbol, String}, COL<:Union{MatrixTerm,
     key_vec::Vector{T}
     ranges::Vector{UnitRange{Int}}
     missing_vecs::Dict{T, Union{Nothing, SparseVector{Bool, Int}}}
+    req_lengths::Vector{Int}
     function IterateFixedTable(
         data::MarketData{T},
         col_names::SVector{N, CL},
         cols::COL,
         key_vec,
         ranges,
-        missing_vecs
+        missing_vecs,
+        req_lengths=fill(0, length(key_vec))
     ) where {T, N, CL, COL}
         @assert Set(key_vec) ⊆ Set(keys(missing_vecs)) "Some Keys are Missing"
         @assert Set(key_vec) ⊆ Set(keys(data.firmdata)) "Some Keys are not in the Parent Data"
-        new{T, N, CL, COL}(data, col_names, cols, key_vec, ranges, missing_vecs)
+        @assert length(key_vec) == length(ranges) == length(req_lengths) "Vectors must be same length"
+        new{T, N, CL, COL}(data, col_names, cols, key_vec, ranges, missing_vecs, req_lengths)
     end
 end
 
@@ -116,8 +119,10 @@ function Base.getindex(
     data::MarketData{T},
     ids::Vector{T},
     dates::ClosedInterval{Vector{Date}},
-    f::FormulaTerm
+    f::FormulaTerm;
+    check_intercept=true
 ) where {T}
+    f = adjust_formula(f; check_intercept)
     sch = apply_schema(f, schema(f, data))
     out = (sch.lhs, sch.rhs.terms...)
     data[ids, dates, out]

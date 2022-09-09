@@ -26,7 +26,7 @@ end
 
 function bh_return(pred::FixedTable{N, T}, coef::SVector{N, T}) where {N, T}
     #@assert size(pred, 2) == length(coef) "Got Matrix of size $(size(pred)) and coefficients of $coef $pred"
-    out = zero(T)
+    out = one(T)
     @simd for i in 1:size(pred)[1]
         out *= (point_pred(pred, coef, i) + 1)
     end
@@ -109,7 +109,7 @@ function pred_diff(
     data::FixedTable{N1},
     rr::RegressionModel,
     fun;
-    minobs::Float64=0.8
+    minobs=0.8
 ) where {N1}
     #@assert N1 == N2 + 1 "Dimensions are mismatched"
     if !isdefined(rr, :coef)
@@ -157,6 +157,21 @@ function pred_diff(
     end
 end
 
+function pred_diff(
+    data::Tuple,
+    rr,
+    args...;
+    vargs...
+)
+    f = if isa(rr, AbstractVector)
+        first(rr).formula
+    else
+        rr.formula
+    end
+    pred_diff(data[1][data[2:end]..., f], rr, args...; vargs...)
+end
+
+
 
 """
     bhar(
@@ -193,7 +208,7 @@ in the regression. These are sometimes called Fama-French abnormal returns. Simp
 Similar to constructing the regression, passing an `IterateFixedTable` will return a Vector and uses a more optimized method.
 """
 bhar(data::Union{IterateFixedTable, FixedTable}; minobs=0.8) = simple_diff(data, bhar; minobs)
-bhar(data::Union{IterateFixedTable, FixedTable}, rr; minobs=0.8) = pred_diff(data, rr, bhar; minobs)
+bhar(data::Union{IterateFixedTable, FixedTable, Tuple}, rr; minobs=0.8) = pred_diff(data, rr, bhar; minobs)
 
 """
     car(
@@ -230,7 +245,7 @@ in the regression. These are sometimes called Fama-French abnormal returns. Simp
 Similar to constructing the regression, passing an `IterateFixedTable` will return a Vector and uses a more optimized method.
 """
 car(data::Union{IterateFixedTable, FixedTable}; minobs=0.8) = simple_diff(data, car; minobs)
-car(data::Union{IterateFixedTable, FixedTable}, rr; minobs=0.8) = pred_diff(data, rr, car; minobs)
+car(data::Union{IterateFixedTable, FixedTable, Tuple}, rr; minobs=0.8) = pred_diff(data, rr, car; minobs)
 
 Statistics.var(data::Union{IterateFixedTable, FixedTable}; minobs=0.8) = simple_diff(data, var_diff; minobs)
 Statistics.std(data::Union{IterateFixedTable, FixedTable}; minobs=0.8) = std(var(data; minobs))

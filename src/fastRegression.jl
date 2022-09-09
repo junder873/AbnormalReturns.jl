@@ -15,7 +15,7 @@ struct BasicReg{L, R, N} <: RegressionModel
         # @assert length(coef) == length(coefnames) "Number of coefficients must be same as number of coefficient names"
         new{L,R,N}(nobs, formula, coef, coefnames, yname, tss, rss, residuals)
     end
-    BasicReg(x::Int, f::FormulaTerm{L,R}, sch) where {L, R} = new{L,R,width(sch.rhs)}(x, f)
+    BasicReg{N}(x::Int, f::FormulaTerm{L,R}) where {L, R, N} = new{L,R,N}(x, f)
 end
 
 
@@ -123,20 +123,32 @@ optimized way and returns a `Vector{BasicReg}`.
 
 """
 function quick_reg(
-    data,
+    data::IterateFixedTable{T, N},
     f::FormulaTerm{L, R};
     minobs=0.8,
     save_residuals::Bool=false
-) where {L, R}
-    final_data = data[1][data[2:end]..., f]
-    N = length(final_data.col_names)
-    out = Vector{BasicReg{L, R, N-1}}(undef, length(final_data))
-    Threads.@threads for i in 1:length(final_data)
-        x = final_data[i]
+) where {T, N, L, R}
+    out = Vector{BasicReg{L, R, N-1}}(undef, length(data))
+    Threads.@threads for i in 1:length(data)
+        x = data[i]
         out[i] = BasicReg(x, f; minobs=adjust_minobs(minobs, x), save_residuals)
     end
     out
 end
+function quick_reg(
+    data::Tuple,
+    f::FormulaTerm{L, R};
+    minobs=0.8,
+    save_residuals::Bool=false,
+    check_intercept=true
+) where {L, R}
+    f = adjust_formula(f; check_intercept)
+    final_data = data[1][data[2:end]..., f, check_intercept=false]
+    quick_reg(final_data, f; minobs, save_residuals)
+
+end
+
+
 
 function quick_reg(
     data::FixedTable,
@@ -151,18 +163,18 @@ end
 StatsBase.predict(mod::BasicReg{L, R, N}, x::FixedTable{N}) where {L, R, N} = x * coef(mod)
 StatsBase.predict(mod::BasicReg, x) = x * coef(mod)
 
-StatsBase.coef(x::BasicReg) = isdefined(x, :coef) ? x.coef : missing
-StatsBase.coefnames(x::BasicReg) = isdefined(x, :coef) ? x.coefnames : missing
-StatsBase.responsename(x::BasicReg) = isdefined(x, :coef) ? x.yname : missing
+StatsBase.coef(x::BasicReg) = isdefined(x, :coefnames) ? x.coef : missing
+StatsBase.coefnames(x::BasicReg) = isdefined(x, :coefnames) ? x.coefnames : missing
+StatsBase.responsename(x::BasicReg) = isdefined(x, :coefnames) ? x.yname : missing
 StatsBase.nobs(x::BasicReg) = x.nobs
-StatsBase.dof_residual(x::BasicReg{L, R, N}) where {L, R, N} = isdefined(x, :coef) ? nobs(x) - N : missing
+StatsBase.dof_residual(x::BasicReg{L, R, N}) where {L, R, N} = isdefined(x, :coefnames) ? nobs(x) - N : missing
 StatsBase.r2(x::BasicReg) = 1 - (rss(x) / deviance(x))
 StatsBase.adjr2(x::BasicReg) = 1 - rss(x) / deviance(x) * (nobs(x) - 1) / dof_residual(x)
 StatsBase.islinear(x::BasicReg) = true
-StatsBase.deviance(x::BasicReg) = isdefined(x, :coef) ? x.tss : missing
-StatsBase.rss(x::BasicReg) = isdefined(x, :coef) ? x.rss : missing
+StatsBase.deviance(x::BasicReg) = isdefined(x, :coefnames) ? x.tss : missing
+StatsBase.rss(x::BasicReg) = isdefined(x, :coefnames) ? x.rss : missing
 function StatsBase.residuals(x::BasicReg)
-    if !isdefined(x, :coef)
+    if !isdefined(x, :coefnames)
         return missing
     end
     if x.residuals === nothing
@@ -186,7 +198,7 @@ function rhs_str(nms, vals; intercept = "(Intercept)")
 end
 
 function Base.show(io::IO, rr::BasicReg)
-    if !isdefined(rr, :coef)
+    if !isdefined(rr, :coefnames)
         print(io, "Obs: $(nobs(rr)), $(rr.formula)")
     else
         print(io, "Obs: $(nobs(rr)), $(responsename(rr)) ~ $(rhs_str(coefnames(rr), coef(rr))), AdjR2: ", round(adjr2(rr) * 100, digits=3), "%")

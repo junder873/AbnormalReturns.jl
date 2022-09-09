@@ -1,4 +1,4 @@
-using CSV, DataFrames, Dates, Test, BusinessDays
+using CSV, DataFrames, Dates, Test, BusinessDays, StaticArrays
 using AbnormalReturns
 
 ##
@@ -7,7 +7,7 @@ using AbnormalReturns
 df_firm = CSV.File(joinpath("data", "daily_ret.csv")) |> DataFrame
 df_mkt = CSV.File(joinpath("data", "mkt_ret.csv")) |> DataFrame
 df_res = CSV.File(joinpath("data", "car_results.csv")) |> DataFrame
-df_mkt[!, :mkt] = df_mkt.mktrf .+ df_mkt.rf
+#df_mkt[!, :mkt] = df_mkt.mktrf .+ df_mkt.rf
 ##
 
 data = MarketData(
@@ -15,10 +15,17 @@ data = MarketData(
     df_firm
 )
 
+DataFrames.transform!(data, @formula(mkt ~ mktrf + rf))
+##
+@test AbnormalReturns.date_range(data.calendar, Date(2019, 3, 31) .. Date(2019, 4, 5)) == 62:66
+@test AbnormalReturns.date_range(data.calendar, Date(2019, 3, 31) .. Date(2019, 4, 6)) == 62:66
+@test AbnormalReturns.date_range(data.calendar, Date(2019, 4) .. Date(2019, 4, 5)) == 62:66
+@test AbnormalReturns.date_range(data.calendar, Date(2019, 4) .. Date(2019, 4, 6)) == 62:66
+
 ##
 
 rr = quick_reg(data[18428, Date(2019, 4) .. Date(2019, 10)], @formula(ret ~ mktrf + hml))
-@test coefnames(rr) == ["(Intercept)", "mktrf", "hml"]
+@test coefnames(rr) == SVector{3}("(Intercept)", "mktrf", "hml")
 @test responsename(rr) == "ret"
 @test nobs(rr) == 126
 @test all(isapprox.(coef(rr), [-.00125105, 1.40602071, 1.19924984]; atol=.00001))

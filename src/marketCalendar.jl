@@ -27,7 +27,7 @@ Base.hash(g::MarketCalendar) = hash(g.bdays) + hash(g.dtmin) + hash(g.dtmax)
 * `dtmax`: maximum date allowed to check for bdays in bdays set. Defaults to `max(bdays...)`.
 * `_initcache_`: initializes the cache for this calendar. Defaults to `true`.
 """
-function MarketCalendar(bdays::Vector{Date}, dtmin::Date=min(bdays...), dtmax::Date=max(bdays...))
+function MarketCalendar(bdays::Vector{Date}, dtmin::Date=minimum(bdays), dtmax::Date=maximum(bdays))
     bdays = sort(bdays)
     isbday_array = zeros(Bool, Dates.value(dtmax - dtmin)+1)
     bdayscounter_array = zeros(UInt32, length(isbday_array))
@@ -72,7 +72,7 @@ function BusinessDays.listbdays(hc::MarketCalendar, dt0::Date, dt1::Date)
 end
 
 function date_range(hc::MarketCalendar, dates::ClosedInterval{Date})
-    date_pos(hc, dates.left):date_pos(hc, dates.right, true)
+    date_pos(hc, dates.left, true):date_pos(hc, dates.right)
 end
 
 function date_range(hc::MarketCalendar, dates::ClosedInterval{Vector{Date}})
@@ -83,16 +83,16 @@ function date_range(hc::MarketCalendar, dates::ClosedInterval{Vector{Date}})
     BusinessDays.checkbounds(hc, maximum(dates.right))
     out = Vector{UnitRange{Int}}(undef, length(dates.left))
     Threads.@threads for i in eachindex(dates.left, dates.right)
-        @inbounds out[i] = date_pos(hc, dates.left[i]; perform_check=false):date_pos(hc, dates.right[i], true; perform_check=false)
+        @inbounds out[i] = date_pos(hc, dates.left[i], true; perform_check=false):date_pos(hc, dates.right[i]; perform_check=false)
     end
     out
 end
 
-function date_pos(hc::MarketCalendar, date::Date, sub_end=false; perform_check=true)
+function date_pos(hc::MarketCalendar, date::Date, add_start=false; perform_check=true)
     perform_check && BusinessDays.checkbounds(hc, date)
-    v = hc.bdayscounter_array[BusinessDays._linenumber(hc, date)] |> Int
-    if sub_end && !isbday(hc, date)
-        v - 1
+    v = 1 + hc.bdayscounter_array[BusinessDays._linenumber(hc, date)] |> Int
+    if add_start && !isbday(hc, date)
+        v + 1
     else
         v
     end

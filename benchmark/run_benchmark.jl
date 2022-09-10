@@ -48,8 +48,8 @@ end
 @time @chain df_events[1:1000000, :] begin
     @rtransform(:reg = quick_reg(data[:firm_id, :est_window_start .. :est_window_end], @formula(ret ~ mkt + smb + hml + umd)),)
 end
-# Run R5 3600: 55.141968 seconds (589.18 M allocations: 59.681 GiB, 12.77% gc time, 0.19% compilation time)
 # Run R7 5700X: 26.472138 seconds (360.50 M allocations: 25.194 GiB, 11.69% gc time, 2.24% compilation time)
+# i7 6700: 231.401211 seconds (363.87 M allocations: 25.336 GiB, 83.97% gc time, 0.04% compilation time)
 
 ##
 
@@ -57,3 +57,4 @@ end
     @transform(:reg = quick_reg.(data[:firm_id, :est_window_start .. :est_window_end, @formula(ret ~ mkt + smb + hml + umd)], Ref(@formula(ret ~ mkt + smb + hml + umd))),)
 end
 # Run R7 5700X: 2.890529 seconds (4.91 M allocations: 795.016 MiB, 5.99% gc time, 6.97% compilation time)
+# i7 6700: 4.215225 seconds (4.08 M allocations: 752.040 MiB, 1.12% compilation time)

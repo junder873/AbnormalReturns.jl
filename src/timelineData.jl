@@ -331,7 +331,7 @@ function add_missing_bdays(dates, cal)
     out
 end
 
-function get_missing_bdays(data::MarketData{T}, id::T, r::UnitRange{Int}, col::Union{Symbol, ContinuousTerm, Term}) where {T}
+function get_missing_bdays(data::MarketData{T}, id::T, r::UnitRange{Int}, col::Union{Symbol, String, ContinuousTerm, Term}) where {T}
     mssngs = data_missing_bdays(data[id, col])
     if mssngs === nothing
         nothing
@@ -367,7 +367,7 @@ end
 
 combine_missing_bdays(vals::Nothing...) = nothing
 function combine_missing_bdays(vals::Union{Nothing, SparseVector{Bool, Int}}...)::SparseVector{Bool, Int}
-    i = findfirst(!==(nothing), vals)
+    i = findfirst(!isnothing, vals)
     out = vals[i]
     for j in i+1:length(vals)
         if vals[j] !== nothing
@@ -405,6 +405,7 @@ end
     end
 end
 
+Base.getindex(data::MarketData{T}, id::T, col::String) where {T} = data[id, Symbol(col)]
 Base.getindex(data::MarketData{T}, id::T, col::Union{Term, ContinuousTerm}) where {T} = data[id, col.sym]
 Base.getindex(data::MarketData{T}, id::T, col::StatsModels.LeadLagTerm) where {T} = data[id, col.term]
 
@@ -415,7 +416,7 @@ Base.getindex(data::MarketData{T}, id::T, col::StatsModels.LeadLagTerm) where {T
 ##################################################
 
 Base.getindex(data::MarketData{T}, id::T, r::UnitRange, col::Symbol, missing_bdays::AbstractVector{Bool}) where {T} =
-    view(data[id, col], r)[Not(missing_bdays)]
+    view(data[id, col], r[Not(missing_bdays)])
 
 Base.getindex(data::MarketData{T}, id::T, r::UnitRange, col::Symbol, ::Nothing=nothing) where {T} =
     view(data[id, col], r)
@@ -487,7 +488,7 @@ end
     col_names::SVector{N}=cols
 ) where {T, N, CL <: Union{String, Symbol}}
     if missing_bdays !== nothing
-        @assert length(missing_days) == length(r) "Missing days is wrong length"
+        @assert length(missing_bdays) == length(r) "Missing days is wrong length"
     end
     FixedTable(
         getindex.(Ref(data), id, Ref(r), cols, Ref(missing_bdays)),
@@ -506,7 +507,7 @@ function Base.getindex(
     col_names=nothing
 ) where {T, CL <: MatrixTerm}
     if missing_bdays !== nothing
-        @assert length(missing_days) == length(r) "Missing days is wrong length"
+        @assert length(missing_bdays) == length(r) "Missing days is wrong length"
     end
     N = length(cols.terms)
     FixedTable(
@@ -672,7 +673,7 @@ data_missing_bdays(x::DataVector) = x.missing_bdays
 
 
 interval(x::DataVector) = x.interval
-interval(data::MarketData{T}, id::T, col::Union{Symbol, ContinuousTerm, Term}) where {T} = interval(data[id, col])
+interval(data::MarketData{T}, id::T, col::Union{Symbol, String, ContinuousTerm, Term}) where {T} = interval(data[id, col])
 function interval(data::MarketData{T}, id::T, col::FunctionTerm{Forig, Fanon, Names}) where {T, Forig, Fanon, Names}
     maximin(interval.(Ref(data), id, Names)...)
 end
@@ -701,13 +702,6 @@ function Base.show(io::IO, data::MarketData{T}) where {T}
     println(io, "Market Columns: $(join(keys(data.marketdata), ", "))")
     println(io, "Firm Columns: $(join(keys(data.firmdata[first(keys(data.firmdata))]), ", "))")
 end
-
-# function Base.show(io::IO, data::TimelineTable{Mssng, T, MNames, FNames}) where {Mssng, T, MNames, FNames}
-#     println(io, "TimelineTable for $(data_id(data)) and available columns $(join([MNames..., FNames...], ","))")
-#     println(io, "Maximum dates given current column selection: $(data_dates(data))")
-#     println(io, "Currently selected dates: $(norm_dates(data))")
-#     pretty_table(io, data; header = vcat(["Date"], names(data)), tf=tf_simple)
-# end
 
 dt_min(x::ClosedInterval{Date}) = x.left
 dt_max(x::ClosedInterval{Date}) = x.right

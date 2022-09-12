@@ -202,10 +202,5 @@ function Base.show(io::IO, rr::BasicReg)
         print(io, "Obs: $(nobs(rr)), $(rr.formula)")
     else
         print(io, "Obs: $(nobs(rr)), $(responsename(rr)) ~ $(rhs_str(coefnames(rr), coef(rr))), AdjR2: ", round(adjr2(rr) * 100, digits=3), "%")
-        # mat = hcat(
-        #     coefnames(rr),
-        #     string.(round.(coef(rr), digits=3))
-        # )
-        # PrettyTables.pretty_table(io, mat)
     end
 end

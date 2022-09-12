@@ -68,12 +68,12 @@ function bh_return(data::FixedTable{1}; minobs=0.8)
 end
 
 function bh_return(
-    data::IterateFixedTable{1};
+    data::IterateFixedTable{T, 1};
     minobs=0.8
-)
+) where {T}
     out = Vector{Union{Missing, Float64}}(missing, length(data))
     Threads.@threads for i in 1:length(data)
-        out[i] = bh_return(data[i], minobs)
+        out[i] = bh_return(data[i]; minobs)
     end
     if any(ismissing.(out))
         out
@@ -112,7 +112,7 @@ function pred_diff(
     minobs=0.8
 ) where {N1}
     #@assert N1 == N2 + 1 "Dimensions are mismatched"
-    if !isdefined(rr, :coef)
+    if !isdefined(rr, :coefnames)
         return missing
     end
     if size(data, 1) < adjust_minobs(minobs, data)
@@ -168,7 +168,7 @@ function pred_diff(
     else
         rr.formula
     end
-    pred_diff(data[1][data[2:end]..., f], rr, args...; vargs...)
+    pred_diff(data[1][data[2:end]..., f, check_intercept=false], rr, args...; vargs...)
 end
 
 

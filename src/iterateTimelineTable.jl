@@ -5,7 +5,7 @@ struct IterateFixedTable{T, N, CL<:Union{Symbol, String}, COL<:Union{MatrixTerm,
     cols::COL
     key_vec::Vector{T}
     ranges::Vector{UnitRange{Int}}
-    missing_vecs::Dict{T, Union{Nothing, SparseVector{Bool, Int}}}
+    missing_vecs::Dict{T, Union{Nothing, OffsetVector{Bool, SparseVector{Bool, Int}}}}
     req_lengths::Vector{Int}
     function IterateFixedTable(
         data::MarketData{T},
@@ -29,6 +29,7 @@ iter_range(data::IterateFixedTable) = data.ranges
 iter_missings(data::IterateFixedTable) = data.missing_vecs
 iter_cols(data::IterateFixedTable) = data.cols
 iter_col_names(data::IterateFixedTable) = data.col_names
+iter_req_lengths(data::IterateFixedTable) = data.req_lengths
 
 function Base.iterate(iter::IterateFixedTable{T}, state=1) where {T}
     if state > length(iter)
@@ -51,19 +52,24 @@ function Base.getindex(data::IterateFixedTable, i::Int)
     mssngs = iter_missings(data)[id]
     if mssngs !== nothing
         mssngs = mssngs[r]
+        if nnz(mssngs) == 0
+            mssngs = nothing
+        end
     end
-    parent(data)[id, r, iter_cols(data), mssngs, col_names=iter_col_names(data)]
+    parent(data)[id, r, iter_cols(data), mssngs, col_names=iter_col_names(data), req_length=iter_req_lengths(data)[i]]
 end
 
 Base.firstindex(data::IterateFixedTable) = 1
 Base.lastindex(data::IterateFixedTable) = length(data) 
 
-function validate_iterator(
-    data::IterateFixedTable,
-    out_vector::Vector
-)
-    all_ids = iter_index.(vcat(values(data.index_dict)...)) |> sort
-    all_ids == 1:length(out_vector)
+function joined_missings(data, id, range_limits, cols)
+    r = range_limits[id]
+    out = combine_missing_bdays(get_missing_bdays.(Ref(data), id, Ref(r), cols)...)
+    if out !== nothing
+        OffsetVector(out, first(r)-1)
+    else
+        nothing
+    end
 end
 
 function Base.getindex(
@@ -72,9 +78,11 @@ function Base.getindex(
     dates::ClosedInterval{Vector{Date}},
     cols
 ) where {T}
+    @assert length(ids) == length(dates.left) == length(dates.right) "Vectors are not the same length"
     u_ids = unique(ids)
-    #unique_cols = combine_columns(cols)
+
     rs = date_range(calendar(data), dates)
+    r_lengths = length.(rs)
     range_limits = Dict(
         u_ids .=> [
             maximin(interval.(Ref(data), id, cols)...) for id in u_ids
@@ -85,25 +93,14 @@ function Base.getindex(
     end
 
     
-    mssngs = Dict(
-        u_ids .=>
-        [
-            combine_missing_bdays(
-                get_missing_bdays.(
-                    Ref(data),
-                    id,
-                    Ref(range_limits[id]),
-                    cols)...
-                    ) for id in u_ids]
-    )
+    mssngs = Dict(u_ids .=> joined_missings.(Ref(data), u_ids, Ref(range_limits), Ref(cols)))
 
-    #new_cols = convert_cols.(cols)
     if eltype(cols) <: AbstractTerm
         col_names = SVector{length(cols)}(coefnames(cols))
         final_cols = MatrixTerm(cols)
     else
-        col_names = cols
-        final_cols = cols
+        col_names = SVector{length(cols)}(cols)
+        final_cols = SVector{length(cols)}(Symbol.(cols))
     end
     IterateFixedTable(
         data,
@@ -111,7 +108,8 @@ function Base.getindex(
         final_cols,
         ids,
         rs,
-        mssngs
+        mssngs,
+        r_lengths
     )
 end
 

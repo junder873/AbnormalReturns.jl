@@ -9,7 +9,7 @@
 * `dtmax`: maximum date allowed to check for bdays in bdays set. Defaults to `max(bdays...)`.
 * `cache`: instance of HolidayCalendarCache.
 """
-mutable struct MarketCalendar <: BusinessDays.HolidayCalendar
+struct MarketCalendar <: BusinessDays.HolidayCalendar
     bdays::Vector{Date}
     dtmin::Date
     dtmax::Date
@@ -27,7 +27,7 @@ Base.hash(g::MarketCalendar) = hash(g.bdays) + hash(g.dtmin) + hash(g.dtmax)
 * `dtmax`: maximum date allowed to check for bdays in bdays set. Defaults to `max(bdays...)`.
 * `_initcache_`: initializes the cache for this calendar. Defaults to `true`.
 """
-function MarketCalendar(bdays::Vector{Date}, dtmin::Date=min(bdays...), dtmax::Date=max(bdays...))
+function MarketCalendar(bdays::Vector{Date}, dtmin::Date=minimum(bdays), dtmax::Date=maximum(bdays))
     bdays = sort(bdays)
     isbday_array = zeros(Bool, Dates.value(dtmax - dtmin)+1)
     bdayscounter_array = zeros(UInt32, length(isbday_array))
@@ -42,7 +42,11 @@ function MarketCalendar(bdays::Vector{Date}, dtmin::Date=min(bdays...), dtmax::D
     return market_calendar
 end
 
-@inline BusinessDays.checkbounds(cal::MarketCalendar, dt::Date) = @assert cal.dtmin <= dt && dt <= cal.dtmax "Date out of calendar bounds: $dt. Allowed dates interval is from $(cal.dtmin) to $(cal.dtmax)."
+function BusinessDays.checkbounds(cal::MarketCalendar, dt::Date)
+    if dt < cal_dt_min(cal)  || dt > cal_dt_max(cal)
+        throw(AssertionError("Date out of calendar bounds: $dt. Allowed dates interval is from $(cal.dtmin) to $(cal.dtmax)."))
+    end
+end
 
 @inline BusinessDays._linenumber(cal::MarketCalendar, dt::Date) = Dates.days(dt) - Dates.days(cal.dtmin) + 1
 
@@ -65,6 +69,38 @@ function BusinessDays.listbdays(hc::MarketCalendar, dt0::Date, dt1::Date)
     BusinessDays.checkbounds(hc, dt0)
     BusinessDays.checkbounds(hc, dt1)
     hc.bdays[dt0 .<= hc.bdays .<= dt1]
+end
+
+function date_range(hc::MarketCalendar, dates::ClosedInterval{Date})
+    date_pos(hc, dates.left, true):date_pos(hc, dates.right)
+end
+
+function date_range(hc::MarketCalendar, dates::ClosedInterval{Vector{Date}})
+    @assert length(dates.left) == length(dates.right) "Date sets are not equal length"
+    BusinessDays.checkbounds(hc, minimum(dates.left))
+    BusinessDays.checkbounds(hc, maximum(dates.left))
+    BusinessDays.checkbounds(hc, minimum(dates.right))
+    BusinessDays.checkbounds(hc, maximum(dates.right))
+    out = Vector{UnitRange{Int}}(undef, length(dates.left))
+    Threads.@threads for i in eachindex(dates.left, dates.right)
+        @inbounds out[i] = date_pos(hc, dates.left[i], true; perform_check=false):date_pos(hc, dates.right[i]; perform_check=false)
+    end
+    out
+end
+
+function date_pos(hc::MarketCalendar, date::Date, add_start=false; perform_check=true)
+    perform_check && BusinessDays.checkbounds(hc, date)
+    v = 1 + hc.bdayscounter_array[BusinessDays._linenumber(hc, date)] |> Int
+    if add_start && !isbday(hc, date)
+        v + 1
+    else
+        v
+    end
+end
+
+
+function date_range(hc::MarketCalendar, dt_min::Date, dt_max::Date)
+    date_range(hc, dt_min .. dt_max)
 end
 
 function Base.show(io::IO, cal::MarketCalendar)

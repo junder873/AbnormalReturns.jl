@@ -13,108 +13,103 @@ mkt_data = MarketData(
 )
 ```
 """
-abstract type CalendarData end
 
 """
-    struct DataVector <: CalendarData
-        data::Vector{Float64}
-        missing_bdays::SparseVector{Bool, Int}
-        dates::ClosedInterval{Date}
-        calendar::MarketCalendar
-        function DataVector(data, missing_bdays, dates, calendar)
-            @assert length(data) == length(missing_bdays) == bdayscount(calendar, dates.left, dates.right) + 1 "Data does not match length of dates or missings"
-            new(data, missing_bdays, dates, calendar)
+    struct DataVector
+        data::OffsetVector{Float64, Vector{Float64}}
+        missing_bdays::Union{Nothing, OffsetVector{Bool, SparseVector{Bool, Int}}}
+        interval::UnitRange{Int}
+        function DataVector(data, missing_bdays, interval)
+            if missing_bdays !== nothing
+                @assert length(data) == length(missing_bdays) "Data does not match length of dates or missings"
+                @assert data.offsets == missing_bdays.offsets
+            end
+            @assert length(interval) == length(data)
+            new(data, missing_bdays, interval)
         end
     end
 
-    DataVector(data::AbstractVector, dates::ClosedInterval{Date}, cal::MarketCalendar)
+    DataVector(data::AbstractVector{T}, offset::Int) where {T}
 
-    DataVector(data::AbstractVector, dates::AbstractVector{Date}, cal::MarketCalendar)
+    DataVector(data::AbstractVector, d::Date, hc::MarketCalendar)
 """
-struct DataVector <: CalendarData
-    data::Vector{Float64}
-    missing_bdays::SparseVector{Bool, Int}
-    dates::ClosedInterval{Date}
-    calendar::MarketCalendar
-    function DataVector(data, missing_bdays, dates, calendar)
-        @assert length(data) == length(missing_bdays) == bdayscount(calendar, dates.left, dates.right) + 1 "Data does not match length of dates or missings"
-        new(data, missing_bdays, dates, calendar)
-    end
-end
-
-"""
-    struct DataMatrix <: CalendarData
-        data::Matrix{Float64}
-        missing_bdays::SparseVector{Bool, Int}# corresponds to each row with a missing value
-        dates::ClosedInterval{Date}
-        calendar::MarketCalendar
-        function DataMatrix(data, missing_bdays, dates, calendar)
-            @assert size(data, 1) == length(missing_bdays) == bdayscount(calendar, dates.left, dates.right) + 1 "Data does not match length of dates or missings"
-            new(data, missing_bdays, dates, calendar)
+struct DataVector
+    data::OffsetVector{Float64, Vector{Float64}}
+    missing_bdays::Union{Nothing, OffsetVector{Bool, SparseVector{Bool, Int}}}
+    interval::UnitRange{Int}
+    function DataVector(data, missing_bdays, interval)
+        if missing_bdays !== nothing
+            @assert length(data) == length(missing_bdays) "Data does not match length of dates or missings"
+            @assert data.offsets == missing_bdays.offsets
         end
-    end
-
-    DataMatrix(data::AbstractMatrix, dates::ClosedInterval{Date}, cal::MarketCalendar)
-"""
-struct DataMatrix <: CalendarData
-    data::Matrix{Float64}
-    missing_bdays::SparseVector{Bool, Int}# corresponds to each row with a missing value
-    dates::ClosedInterval{Date}
-    calendar::MarketCalendar
-    function DataMatrix(data, missing_bdays, dates, calendar)
-        @assert size(data, 1) == length(missing_bdays) == bdayscount(calendar, dates.left, dates.right) + 1 "Data does not match length of dates or missings"
-        new(data, missing_bdays, dates, calendar)
+        @assert length(interval) == length(data)
+        new(data, missing_bdays, interval)
     end
 end
 
-struct MarketData{T, MNames, FNames, N1, N2}
+struct MarketData{T}
     calendar::MarketCalendar
-    marketdata::NamedTuple{MNames, NTuple{N1, DataVector}} # column names as symbols
-    firmdata::Dict{T, NamedTuple{FNames, NTuple{N2, DataVector}}} # data stored by firm id and then by column name as symbol
+    marketdata::Dict{Symbol, DataVector} # column names as symbols
+    firmdata::Dict{T, Dict{Symbol, DataVector}} # data stored by firm id and then by column name as symbol
 end
 
 struct AllowMissing{mssng} end
 
 """
-    mutable struct TimelineTable{Mssng, T, MNames, FNames, N1, N2} <: Tables.AbstractColumns
-        parent::MarketData{T, MNames, FNames, N1, N2}
-        "The current ID"
-        id::T
-        "Whether the functions return Vector{Union{Missing, Float64}} or Vector{Float64}"
-        allow_missing::Type{AllowMissing{Mssng}}
-        "Actual returnable dates that guarentees a square matrix made of the minimum and maximum of the DataVectors for this ID and set of columns"
-        dates::ClosedInterval{Date}
-        "Index of column names and any lags/leads"
-        cols::DictIndex
-        "missing days between the dates"
-        missing_bdays::SparseVector{Bool, Int}
-        "dates requested, which provides what data is automatically returned by functions"
-        req_dates::ClosedInterval{Date}
+    struct FixedTable{N, T<:AbstractFloat, AV <: AbstractVector{T}, CL<:Union{Symbol, String}} <: AbstractMatrix{T}
+        data::SVector{N, AV}
+        cols::SVector{N, CL}
+        req_length::Int
+        function FixedTable(xs::SVector{N, AV}, cols::SVector{N, CL}, req_length=0) where {T, N, AV<:AbstractVector{T}, CL}
+            new{N, T, AV, CL}(xs, cols, req_length)
+        end
     end
 
 
-This type provides [Tables.jl](https://github.com/JuliaData/Tables.jl) access to
-`DataVector`s.
-
-Functions to update some values are:
-- `AbnormalReturns.update_id!`: changes the `id` (which updates `dates` and `missing_bdays`)
-- `select!`: changes the `cols` (also updates `dates` and `missing_bdays` if `cols` is different)
-- `AbnormalReturns.update_dates!`: changes `req_dates` (does not update anything else)
+This provides a fixed-width interface that is designed to allow quick access
+(either through accessing a column number `data[:, 1]` or accessing a column
+name `data[:, :a]`). `req_length` is an optional parameter that specifies the
+length that a user originally requested, which is used in later functions
+to determine if the FixedTable has too few rows.
 """
-mutable struct TimelineTable{Mssng, T, MNames, FNames, N1, N2} <: Tables.AbstractColumns
-    parent::MarketData{T, MNames, FNames, N1, N2}
-    "The current ID"
-    id::T
-    "Whether the functions return Vector{Union{Missing, Float64}} or Vector{Float64}"
-    allow_missing::Type{AllowMissing{Mssng}}
-    "Actual returnable dates that guarentees a square matrix made of the minimum and maximum of the DataVectors for this ID and set of columns"
-    dates::ClosedInterval{Date}
-    "Index of column names and any lags/leads"
-    cols::DictIndex
-    "missing days between the dates"
-    missing_bdays::SparseVector{Bool, Int}
-    "dates requested, which provides what data is automatically returned by functions"
-    req_dates::ClosedInterval{Date}
+struct FixedTable{N, T<:AbstractFloat, AV <: AbstractVector{T}, CL<:Union{Symbol, String}} <: AbstractMatrix{T}
+    data::SVector{N, AV}
+    cols::SVector{N, CL}
+    req_length::Int
+    function FixedTable(xs::SVector{N, AV}, cols::SVector{N, CL}, req_length=0) where {T, N, AV<:AbstractVector{T}, CL}
+        new{N, T, AV, CL}(xs, cols, req_length)
+    end
+end
+
+function all_equal_length(xs)
+    l1 = length(xs[1])
+    for x in xs[2:end]
+        if length(x) != l1
+            return false
+        end
+    end
+    true
+end
+
+#Base.length(data::FixedTable{N}) where {N} = N * length(data[1])
+Base.size(data::FixedTable{N}) where {N} = (length(data[:, 1]), N)
+Base.size(data::Adjoint{X, FixedTable{N}}) where {X, N} = (N, data.parent[1])
+
+LinearAlgebra.adjoint(x::FixedTable{N, T}) where {N, T} = Adjoint{T, typeof(x)}(x)
+
+"""
+Checks whether each firm_id-date pair is unique, assumes that vectors are sorted by firm_id then date
+
+Returns true if there is at least one firm_id-date pair repeated, false if all are unique
+"""
+function all_unique_obs(firm_ids::AbstractVector, dates::AbstractVector)
+    @assert length(firm_ids) == length(dates) "Length of vectors are not the same"
+    for i in 2:length(firm_ids)
+        @inbounds if firm_ids[i] == firm_ids[i-1] && dates[i] == dates[i-1]
+            return true
+        end
+    end
+    return false
 end
 
 """
@@ -124,6 +119,7 @@ end
         date_col_market=:date,
         date_col_firms=:date,
         id_col=:permno,
+        add_intercept_col=true,
         valuecols_market=nothing,
         valuecols_firms=nothing
     )
@@ -141,6 +137,8 @@ end
     dataset. Otherwise a vector of Symbol or String specifying column names.
 - `valuecols_firms=nothing`: Same as above
 - `id_col=:permno`: The column corresponding to the set of firm IDs in `df_firms`
+- `add_intercept_col=true`: Whether to add a column to the data for an intercept (which is
+    always equal to 1)
 
 MarketData is the main data storage structure. Data is stored for each firm in
 a Dict, where the data itself is a NamedTuple (names corresponding to column names,
@@ -168,11 +166,18 @@ function MarketData(
     date_col_market=:date,
     date_col_firms=:date,
     id_col=:permno,
+    add_intercept_col=true,
     valuecols_market=nothing,
     valuecols_firms=nothing
 )
     df_market = DataFrame(df_market)
     df_firms = DataFrame(df_firms)
+    if add_intercept_col
+        df_market[!, :intercept] .= 1.0
+        if valuecols_market !== nothing && :intercept ∉ valuecols_market
+            push!(valuecols_market, :intercept)
+        end
+    end
     if valuecols_market === nothing
         valuecols_market = Symbol.([n for n in Symbol.(names(df_market)) if n ∉ [date_col_market]])
     end
@@ -193,18 +198,20 @@ function MarketData(
     dropmissing!(df_firms, [id_col, date_col_firms])
     sort!(df_firms, [id_col, date_col_firms])
 
-    if any(nonunique(df_firms, [id_col, date_col_firms]))
+    # since this is sorted, just a single iteration is enough to check
+    if all_unique_obs(df_firms[:, id_col], df_firms[:, date_col_firms])
         @error("There are duplicate id-date rows in the firm data")
     end
 
     cal = MarketCalendar(df_market[:, date_col_market])
 
-    market_data = NamedTuple(
+    market_data = Dict(
         valuecols_market .=>
         DataVector.(
             Tables.columns(df_market[:, valuecols_market]),
-            Ref(df_market[:, date_col_market]),
-            Ref(cal)
+            0
+            # Ref(df_market[:, date_col_market]),
+            # Ref(cal)
         )
     )
 
@@ -228,15 +235,15 @@ function MarketData(
     col_tab = columntable(gdf)
 
 
-    firm_data = Dict{typeof(col_tab[id_col][1][1]), NamedTuple{Tuple(valuecols_firms), NTuple{length(valuecols_firms), DataVector}}}()
+    firm_data = Dict{typeof(col_tab[id_col][1][1]), Dict{Symbol, DataVector}}()
     sizehint!(firm_data, length(col_tab[id_col]))
 
     for i in 1:length(col_tab[id_col])
-        firm_data[col_tab[id_col][i][1]] = NamedTuple(
+        firm_data[col_tab[id_col][i][1]] = Dict(
             valuecols_firms .=> (
                 DataVector(
                     col_tab[col][i],
-                    col_tab[date_col_firms][i],
+                    col_tab[date_col_firms][i][1],
                     cal
                 ) for col in valuecols_firms
             )
@@ -264,38 +271,27 @@ function check_all_businessdays(dates, cal)
     end
 end
 
-function setup_calendar_data(f, data, dates::ClosedInterval{Date}, cal::MarketCalendar)
+function setup_calendar_data(f, data, offset)
     if any(ismissing.(data))
-        missing_days = sparsevec(any(ismissing, data, dims=2))
-        data = coalesce.(data, zero(nonmissingtype(eltype(data))))
+        missing_days = OffsetVector(sparsevec(any(ismissing, data, dims=2)), offset)
     else
-        missing_days = spzeros(Bool, size(data, 1))
+        missing_days = nothing#OffsetVector(spzeros(Bool, size(data, 1)), offsets)
     end
+    data = OffsetVector(coalesce.(data, zero(nonmissingtype(eltype(data)))), offset)
     f(
         data,
         missing_days,
-        dates,
-        cal
+        offset+1:offset+length(data)
     )
 end
 
-function DataVector(data::AbstractVector, dates::ClosedInterval{Date}, cal::MarketCalendar)
-    setup_calendar_data(
-        DataVector,
-        data,
-        dates,
-        cal
-    )
-end
-
-function DataVector(data::AbstractVector, dates::AbstractVector{Date}, cal::MarketCalendar)
+function DataVector(data::AbstractVector{T}, offset::Int) where {T}
     if any(ismissing.(data))
         if all(ismissing.(data))
             return DataVector(
-                zeros(nonmissingtype(eltype(data)), 1),
-                sparsevec([1], [true]),
-                dates[1] .. dates[1],
-                cal
+                OffsetVector(zeros(nonmissingtype(T), 1), offset),
+                OffsetVector(sparsevec([1], [true]), offset),
+                offset+1:offset+1
             )
         end
         i = findfirst(!ismissing, data)
@@ -303,27 +299,21 @@ function DataVector(data::AbstractVector, dates::AbstractVector{Date}, cal::Mark
         setup_calendar_data(
             DataVector,
             data[i:j],
-            dates[i] .. dates[j],
-            cal
+            offset+i-1
         )
     else
         setup_calendar_data(
             DataVector,
             data,
-            dates[1] .. dates[end],
-            cal
+            offset
         )
     end
 end
 
-function DataMatrix(data::AbstractMatrix, dates::ClosedInterval{Date}, cal::MarketCalendar)
-    setup_calendar_data(
-        DataMatrix,
-        data,
-        dates,
-        cal
-    )
+function DataVector(data::AbstractVector, d::Date, hc::MarketCalendar)
+    DataVector(data, date_pos(hc, d)-1)
 end
+
 function add_missing_bdays(dates, cal)
     out = Date[]
     if length(dates) == bdayscount(cal, dates[1], dates[end]) + 1
@@ -340,436 +330,441 @@ function add_missing_bdays(dates, cal)
     out
 end
 
-function get_missing_bdays(cal::MarketCalendar, missing_bdays::SparseVector{Bool, Int}, dates_missings::ClosedInterval{Date}, new_dates::ClosedInterval{Date})
-    missing_bdays[date_range(cal, dates_missings, new_dates)]
+function get_missing_bdays(data::MarketData{T}, id::T, r::UnitRange{Int}, col::Union{Symbol, String, ContinuousTerm, Term}) where {T}
+    mssngs = data_missing_bdays(data[id, col])
+    if mssngs === nothing
+        nothing
+    else
+        mssngs[r]
+    end
 end
 
-function get_missing_bdays(data, new_dates::ClosedInterval{Date})
-    get_missing_bdays(calendar(data), data_missing_bdays(data), data_dates(data), new_dates)
+get_missing_bdays(data::MarketData{T}, id::T, r::UnitRange{Int}, col::InterceptTerm{true}) where {T} = get_missing_bdays(data, id, r, :intercept)
+
+function get_missing_bdays(data::MarketData{T}, id::T, r::UnitRange{Int}, col::FunctionTerm{Forig, Fanon, Names}) where {T, Forig, Fanon, Names}
+    combine_missing_bdays(get_missing_bdays.(Ref(data), id, Ref(r), Names)...)
+end
+function get_missing_bdays(data::MarketData{T}, id::T, r::UnitRange{Int}, col::InteractionTerm) where {T}
+    combine_missing_bdays(get_missing_bdays.(Ref(data), id, Ref(r), col.terms)...)
+end
+function get_missing_bdays(data::MarketData{T}, id::T, r::UnitRange{Int}, col::StatsModels.LeadLagTerm{<:Any, typeof(lead)}) where {T}
+    mssngs = data_missing_bdays(data[id, col.term])
+    if mssngs === nothing
+        nothing
+    else
+        mssngs[r .+ col.nsteps]
+    end
+end
+function get_missing_bdays(data::MarketData{T}, id::T, r::UnitRange{Int}, col::StatsModels.LeadLagTerm{<:Any, typeof(lag)}) where {T}
+    mssngs = data_missing_bdays(data[id, col.term])
+    if mssngs === nothing
+        nothing
+    else
+        mssngs[r .- col.nsteps]
+    end
 end
 
-function date_range(cal::MarketCalendar, timeline_dates::ClosedInterval{Date}, new_dates::ClosedInterval{Date})
-    dates = dates_min_max(timeline_dates, new_dates)
-    s = bdayscount(cal, dt_min(timeline_dates), dt_min(dates)) + 1
-    e = s + bdayscount(cal, dt_min(dates), dt_max(dates)) - !isbday(cal, dt_max(dates))
-    s:e
-end
-
-function date_range(cal::MarketCalendar, data::CalendarData, dt_min::Date, dt_max::Date)
-    date_range(cal, data_dates(data), dt_min .. dt_max)
-end
-
-function date_range(cal::MarketCalendar, data::CalendarData, dates::ClosedInterval{Date})
-    date_range(cal, data_dates(data), dates)
-end
-
-# , mssngs::SparseVector{Bool, Int}=spzeros(Bool, size(raw_values(data), 1))
-function Base.getindex(data::DataMatrix, dates::ClosedInterval{Date})
-    new_dates = dates_min_max(data_dates(data), dates)
-    r = date_range(calendar(data), data_dates(data), new_dates)
-    data.data[r, :]
-end
-
-function Base.getindex(data::DataVector, dates::ClosedInterval{Date})
-    new_dates = dates_min_max(data_dates(data), dates)
-    r = date_range(calendar(data), data_dates(data), new_dates)
-    data.data[r]
-end
-
-function combine_missing_bdays(vals::SparseVector{Bool, Int}...)::SparseVector{Bool, Int}
-    (|).(vals...)
-end
-
-function combine_missing_bdays(vals::Vector{SparseVector{Bool, Int}})::SparseVector{Bool, Int}
-    out = sparsevec(zeros(Bool, length(vals[1])))
-    for v in vals
-        out = out .| v
+combine_missing_bdays(vals::Nothing...) = nothing
+function combine_missing_bdays(vals::Union{Nothing, SparseVector{Bool, Int}}...)::SparseVector{Bool, Int}
+    i = findfirst(!isnothing, vals)
+    out = vals[i]
+    for j in i+1:length(vals)
+        if vals[j] !== nothing
+            out = out .| vals[j]
+        end
     end
     out
 end
 
-function Base.view(data::DataVector, dates::ClosedInterval{Date}, mssngs::SparseVector{Bool, Int})
-    @assert dt_min(data) <= dt_min(dates) && dt_max(dates) <= dt_max(data) "Date range out of bounds"
-    r = date_range(calendar(data), data_dates(data), dates)
-    @assert length(mssngs) == length(r) "Missing data vector is the wrong length"
-    if nnz(mssngs) == 0
-        view(data.data, r)
-    else
-        view(data.data, r[(!).(mssngs)])
-    end
-end
-
-function Base.view(data::DataMatrix, dates::ClosedInterval{Date}, mssngs::SparseVector{Bool, Int})
-    @assert dt_min(data) <= dt_min(dates) && dt_max(dates) <= dt_max(data) "Date range out of bounds"
-    r = date_range(calendar(data), data_dates(data), dates)
-    @assert length(mssngs) == length(r) "Missing data vector is the wrong length"
-    if nnz(mssngs) == 0
-        view(data.data, r, :)
-    else
-        view(data.data, r[(!).(mssngs)], :)
-    end
-end
-
-function Base.view(data::DataVector, dates::ClosedInterval{Date})
-    @assert dt_min(data) <= dt_min(dates) && dt_max(dates) <= dt_max(data) "Date range out of bounds"
-    r = date_range(calendar(data), data_dates(data), dates)
+function Base.view(data::DataVector, r::UnitRange)
     view(data.data, r)
 end
 
-function Base.view(data::DataMatrix, dates::ClosedInterval{Date})
-    @assert dt_min(data) <= dt_min(dates) && dt_max(dates) <= dt_max(data) "Date range out of bounds"
-    r = date_range(calendar(data), data_dates(data), dates)
-    view(data.data, r, :)
+function Base.view(data::DataVector, r::AbstractVector)
+    view(data.data, r)
 end
 
-Base.getindex(data::NamedTuple{Names, NTuple{N, DataVector}}, col::TimelineColumn) where {Names, N} = shift(data[Symbol(col)], col.shifts)
-
-function Base.getindex(data::MarketData{T, MNames, FNames}, id::T, col::TimelineColumn) where {T, MNames, FNames}
-    shift(pick_data(data, id, Symbol(col)), col.shifts)
+function maximin(rs::UnitRange{Int}...)
+    max(first.(rs)...):min(last.(rs)...)
 end
 
-function Base.getindex(
-    data::MarketData{T, MNames, FNames},
+##################################################
+# Basic get functions that return a DataVector
+##################################################
+
+@inline function Base.getindex(
+    data::MarketData{T},
     id::T,
-    cols::Vector{TimelineColumn}=TimelineColumn.([FNames..., MNames...]),
-    allow_mssng::Type{AllowMissing{Mssng}}=AllowMissing{false},
-) where {T, MNames, FNames, Mssng}
-    real_dates = dates_min_max(get_all_dates(data, id, cols))
-    data[id, real_dates, cols, allow_mssng]
+    col::Symbol
+) where {T}
+    if col ∈ keys(data.marketdata)
+        data.marketdata[col]
+    else
+        data.firmdata[id][col]
+    end
+end
+
+Base.getindex(data::MarketData{T}, id::T, col::String) where {T} = data[id, Symbol(col)]
+Base.getindex(data::MarketData{T}, id::T, col::Union{Term, ContinuousTerm}) where {T} = data[id, col.sym]
+Base.getindex(data::MarketData{T}, id::T, col::StatsModels.LeadLagTerm) where {T} = data[id, col.term]
+
+
+##################################################
+# Basic get functions that return a view of the
+# underlying data
+##################################################
+
+Base.getindex(data::MarketData{T}, id::T, r::UnitRange, col::Symbol, missing_bdays::AbstractVector{Bool}) where {T} =
+    view(data[id, col], r[Not(missing_bdays)])
+
+Base.getindex(data::MarketData{T}, id::T, r::UnitRange, col::Symbol, ::Nothing=nothing) where {T} =
+    view(data[id, col], r)
+
+Base.getindex(data::MarketData{T}, id::T, r::UnitRange, col::String, missing_bdays=nothing) where {T} = 
+    data[id, r, Symbol(col), missing_bdays]
+
+Base.getindex(data::MarketData{T}, id::T, r::UnitRange, col::Union{Term, ContinuousTerm}, missing_bdays=nothing) where {T} =
+    data[id, r, col.sym, missing_bdays]
+
+Base.getindex(data::MarketData{T}, id::T, r::UnitRange, col::StatsModels.LeadLagTerm{<:Any, typeof(lead)}, missing_bdays=nothing) where {T} =
+    data[id, r .+ col.nsteps, col.term, missing_bdays]
+
+
+Base.getindex(data::MarketData{T}, id::T, r::UnitRange, col::StatsModels.LeadLagTerm{<:Any, typeof(lag)}, missing_bdays=nothing) where {T} =
+    data[id, r .- col.nsteps, col.term, missing_bdays]
+
+Base.getindex(data::MarketData{T}, id::T, r::UnitRange, col::InterceptTerm{true}, missing_bdays=nothing) where {T} =
+    data[id, r, :intercept, missing_bdays]
+
+##################################################
+# Slightly more complex get functions to deal
+# with interaction and function terms
+# (these greatly slow down theprocess and are
+# not recommended)
+##################################################
+
+@inline function Base.getindex(
+    data::MarketData{T},
+    id::T,
+    r::UnitRange,
+    col::InteractionTerm,
+    missing_bdays=nothing
+) where {T}
+    out = fill(1.0, length(r))
+    for t in col.terms
+        out .*= data[id, r, t, missing_bdays]
+    end
+    out = OffsetVector(out, r[1]-1)
+    view(out, r)
+end
+
+@inline function Base.getindex(
+    data::MarketData{T},
+    id::T,
+    r::UnitRange,
+    col::FunctionTerm{Fo, Fa, Names},
+    missing_bdays=nothing
+) where {T, Fo,Fa,Names}
+    out = OffsetVector(col.fanon.((data[id, r, t, missing_bdays] for t in Names)...), r[1]-1)
+    view(out, r)
+end
+
+##################################################
+# Get functions that return a Fixed Table
+# Starting with ones where the range is already
+# defined (r), the assumption is this r
+# is already checked and an error is returned
+# if it is out of bounds anywhere
+##################################################
+
+@inline function Base.getindex(
+    data::MarketData{T},
+    id::T,
+    r::UnitRange{Int},
+    cols::SVector{N, CL},
+    missing_bdays::Union{Nothing, AbstractVector{Bool}};
+    req_length::Int=0,
+    col_names::SVector{N}=cols
+) where {T, N, CL <: Union{String, Symbol}}
+    if missing_bdays !== nothing
+        @assert length(missing_bdays) == length(r) "Missing days is wrong length"
+    end
+    FixedTable(
+        getindex.(Ref(data), id, Ref(r), cols, Ref(missing_bdays)),
+        col_names,
+        req_length
+    )
 end
 
 function Base.getindex(
-    data::MarketData{T, MNames, FNames},
+    data::MarketData{T},
+    id::T,
+    r::UnitRange{Int},
+    cols::CL,
+    missing_bdays::Union{Nothing, AbstractVector{Bool}};
+    req_length::Int=0,
+    col_names=nothing
+) where {T, CL <: MatrixTerm}
+    if missing_bdays !== nothing
+        @assert length(missing_bdays) == length(r) "Missing days is wrong length"
+    end
+    N = length(cols.terms)
+    FixedTable(
+        SVector{N}(data[id, r, col, missing_bdays] for col in cols.terms),
+        col_names === nothing ? SVector{N}(coefnames(cols.terms)) : col_names,
+        req_length
+    )
+end
+
+function Base.getindex(
+    data::MarketData{T},
+    id::T,
+    r::UnitRange{Int},
+    f::FormulaTerm,
+    missing_bdays=nothing;
+    req_length::Int=0,
+    check_intercept=true
+) where {T}
+    f = adjust_formula(f; check_intercept)
+    sch = apply_schema(f, schema(f, data))
+    cols = MatrixTerm((sch.lhs, sch.rhs.terms...))
+    data[
+        id,
+        r,
+        cols,
+        missing_bdays=missing_bdays,
+        req_length=req_length
+    ]
+end
+
+##################################################
+# Get functions that return a Fixed Table
+# these allow input for a date range which is
+# converted to unitranges
+##################################################
+
+function Base.getindex(
+    data::MarketData{T},
     id::T,
     dates::ClosedInterval{Date},
-    cols::Vector{TimelineColumn}=TimelineColumn.([FNames..., MNames...]),
-    allow_mssng::Type{AllowMissing{Mssng}}=AllowMissing{false}
-) where {T, MNames, FNames, Mssng}
-    out = TimelineTable(
-        data,
-        id,
-        allow_mssng,
-        dates_min_max(get_all_dates(data, id, cols)),
-        DictIndex(cols),
-        sparsevec(zeros(Bool, bdayscount(calendar(data), dt_min(dates), dt_max(dates)))),
-        dates,
-    )
-    out.missing_bdays = combine_all_missing_bdays(out)
-    out
+    cols::SVector{N};
+) where {T, N}
+    r1 = date_range(calendar(data), dates)
+    r = maximin(r1, interval.(Ref(data), id, cols)...)
+    mssngs = combine_missing_bdays(get_missing_bdays.(Ref(data), id, Ref(r), cols)...)
+    data[id, r, cols, mssngs, req_length=length(r1)]
 end
 
 function Base.getindex(
     data::MarketData{T},
     id::T,
     dates::ClosedInterval{Date},
-    cols::Vector,
-    allow_mssng::Type{AllowMissing{Mssng}}=AllowMissing{false}
-) where {T, Mssng}
-    data[id, dates, TimelineColumn.(cols), allow_mssng]
+    cols::AbstractVector
+) where {T}
+    cols = SVector{length(cols)}(cols)
+    data[id, dates, cols]
 end
 
-function Base.getindex(data::TimelineTable, col::TimelineColumn)
-    parent(data)[data.id, col]
-end
-Base.getindex(data::TimelineTable, col::Symbol) = data[TimelineColumn(col)]
 
 function Base.getindex(
-    data::TimelineTable,
+    data::MarketData{T},
+    id::T,
+    dates::ClosedInterval{Date},
+    f::FormulaTerm;
+    check_intercept=true
+) where {T}
+    # this has to deal with schema here since in order to get missing bdays
+    # and other items schema is necessary
+    f = adjust_formula(f; check_intercept)
+    sch = apply_schema(f, schema(f, data))
+    out = (sch.lhs, sch.rhs.terms...)
+    r1 = date_range(calendar(data), dates)
+    r = maximin(r1, interval.(Ref(data), id, out)...)
+    mssngs = combine_missing_bdays(get_missing_bdays.(Ref(data), id, Ref(r), out)...)
+    data[id, r, MatrixTerm(out), mssngs, req_length=length(r1)]
+end
+
+##################################################
+# getindex that simply returns a tuple if columns
+# are not provided
+##################################################
+
+Base.getindex(data::MarketData{T}, id::T, r::Union{UnitRange, ClosedInterval{Date}}) where {T} = (data, id, r)
+
+##################################################
+# functions related to FixedTable
+##################################################
+
+function Base.getindex(data::FixedTable{N}, ::Colon, i::Int) where {N}
+    @assert 1 <= i <= N "Column not in data"
+    data.data[i]
+end
+
+function Base.getindex(data::FixedTable{N}, i::Int, j::Int) where {N}
+    @assert 1 <= j <= N "Column not in data"
+    data.data[j][i]
+end
+
+function Base.getindex(
+    data::FixedTable{N, T, AV, CL},
     ::Colon,
-    col::TimelineColumn
-)
-    ret_dates = dates_min_max(data_dates(data), norm_dates(data))
-    data[ret_dates, col]
+    col::CL
+) where {N, T, AV, CL}
+    @assert col ∈ names(data) "Column is not in the data"
+    i = findfirst(==(col), names(data))
+    data[:, i]
 end
 
-function Base.getindex(
-    data::TimelineTable{false},
-    dates::ClosedInterval{Date},
-    col::TimelineColumn
-)
-    new_mssngs = get_missing_bdays(calendar(data), data_missing_bdays(data), data_dates(data), dates)
-    if nnz(new_mssngs) == 0
-        data[col][dates]
-    else
-        data[col][dates][(!).(new_mssngs)]
-    end
+function Base.getindex(data::FixedTable{N, T, AV, CL}, ::Colon, col) where {N, T, AV, CL}
+    data[:, CL(col)]
 end
 
-function Base.getindex(
-    data::TimelineTable{true},
-    dates::ClosedInterval{Date},
-    col::TimelineColumn
-)
-    new_mssngs = get_missing_bdays(calendar(data), data_missing_bdays(data), data_dates(data), dates)
-    out = data[col][dates]
-    out = allowmissing(out)
-    out[new_mssngs] .= missing
-    to_add_pre = ifelse(
-        dt_min(data) < dt_min(data_dates(data)),
-        bdayscount(calendar(data), dt_min(data), dt_min(data_dates(data))),
-        0
-    )
-    to_add_post = ifelse(
-        dt_max(data) > dt_max(data_dates(data)),
-        bdayscount(calendar(data), dt_max(data_dates(data)), dt_max(data)),
-        0
-    )
-    vcat(
-        fill(missing, to_add_pre),
-        out,
-        fill(missing, to_add_post)
-    )
-end
-
-function Base.getindex(
-    data::TimelineTable,
-    ::Colon,
-    col::Symbol
-)
-    data[:, TimelineColumn(col)]
-end
-
-function Base.getindex(
-    data::TimelineTable,
-    dates::ClosedInterval{Date},
-    col::Symbol
-)
-    data[dates, TimelineColumn(col)]
-end
-
-function Base.getproperty(
-    data::TimelineTable,
-    sym::Symbol
-)
-    if sym == :calendar
-        getfield(getfield(data, :parent), :calendar)
-    elseif sym == :firmdata
-        getfield(getfield(data, :parent), :firmdata)
-    elseif sym == :marketdata
-        getfield(getfield(data, :parent), :marketdata)
-    else
-        getfield(data, sym)
-    end
-end
+Base.names(x::FixedTable) = x.cols
 
 
 
-function get_dates(data::TimelineTable{true})
-    listbdays(calendar(data), dt_min(data), dt_max(data))
-end
 
-function get_dates(data::TimelineTable{false})
-    real_dates = dates_min_max(data_dates(data), norm_dates(data))
-    out = listbdays(calendar(data), dt_min(real_dates), dt_max(real_dates))
-    new_mssngs = get_missing_bdays(calendar(data), data_missing_bdays(data), data_dates(data), real_dates)
-    if nnz(new_mssngs) == 0
-        return out
-    else
-        return out[(!).(new_mssngs)]
-    end
-end
+# function Base.length(data::TimelineTable{false})
+#     real_dates = dates_min_max(data_dates(data), norm_dates(data))
+#     c = bdayscount(calendar(data), dt_min(real_dates), dt_max(real_dates)) + isbday(calendar(data), dt_max(real_dates))
+#     new_mssngs = get_missing_bdays(calendar(data), data_missing_bdays(data), data_dates(data), real_dates)
+#     return c - nnz(new_mssngs)
+# end
 
-Base.names(x::TimelineTable) = x.cols.cols
-
-Tables.istable(::Type{<:TimelineTable}) = true
-Tables.columnaccess(::Type{<:TimelineTable}) = true
-function Tables.schema(obj::TimelineTable{Mssngs}) where {Mssngs}
-    col_sym = Tables.columnnames(obj)
-    col_types = vcat(
-        [Date],
-        fill(Mssngs ? Union{Float64, Missing} : Float64, length(col_sym)-1)
-    )
-    Tables.Schema(col_sym, col_types)
-end
-
-Tables.columns(x::TimelineTable) = x
-function Tables.getcolumn(x::TimelineTable, i::Int)
-    if i == 1
-        get_dates(x)
-    else
-        Tables.getcolumn(x, x.cols.lookup[i-1])# subtract 1 since date is the first column produced
-    end
-end
-function Tables.getcolumn(x::TimelineTable, nm::TimelineColumn)
-    x[:, nm]
-end
-function Tables.getcolumn(x::TimelineTable, nm::Symbol)
-    if nm == :date
-        return get_dates(x)
-    end
-    if nm ∈ Tables.columnnames(x)
-        pos = findfirst(nm .== Tables.columnnames(x))
-        return Tables.getcolumn(x, pos)
-    end
-end
-
-function Tables.columnnames(x::TimelineTable)
-    vcat([:date], Symbol.(String.(names(x))))
-end
-
-function Base.length(data::TimelineTable{false})
-    real_dates = dates_min_max(data_dates(data), norm_dates(data))
-    c = bdayscount(calendar(data), dt_min(real_dates), dt_max(real_dates)) + isbday(calendar(data), dt_max(real_dates))
-    new_mssngs = get_missing_bdays(calendar(data), data_missing_bdays(data), data_dates(data), real_dates)
-    return c - nnz(new_mssngs)
-end
-
-function Base.length(data::TimelineTable{true})
-    bdayscount(calendar(data), dt_min(data), dt_max(data)) + isbday(calendar(data), dt_max(data))
-end
 
 function Base.length(x::DataVector)
-    return length(data_missing_bdays(x)) - nnz(data_missing_bdays(x))
-end
-
-DataFrames.dropmissing(data::TimelineTable{false}) = data
-DataFrames.allowmissing(data::TimelineTable{true}) = data
-
-function DataFrames.dropmissing(data::TimelineTable{true})
-    TimelineTable(
-        parent(data),
-        data_id(data),
-        AllowMissing{false},
-        data_dates(data),
-        DictIndex(names(data)),
-        data_missing_bdays(data),
-        norm_dates(data)
-    )
-end
-
-function DataFrames.allowmissing(data::TimelineTable{false})
-    TimelineTable(
-        parent(data),
-        data_id(data),
-        AllowMissing{true},
-        data_dates(data),
-        DictIndex(names(data)),
-        data_missing_bdays(data),
-        norm_dates(data)
-    )
-end
-
-function update_dates!(
-    data::TimelineTable,
-    dates::ClosedInterval{Date}
-)
-    data.req_dates = dates
-    data
-end
-
-function update_id!(
-    data::TimelineTable{Mssng, T},
-    id::T
-) where {Mssng, T}
-    if id != data.id
-        data.id = id
-        data.dates = dates_min_max(get_all_dates(data))
-        data.missing_bdays = combine_all_missing_bdays(data)
+    if missing_bdays === nothing
+        length(raw_values(x))
+    else
+        length(data_missing_bdays(x)) - nnz(data_missing_bdays(x))
     end
-    data
 end
 
-function DataFrames.select!(x::TimelineTable, cols::Vector)
-    select!(x, TimelineColumn.(cols))
+# DataFrames.dropmissing(data::TimelineTable{false}) = data
+# DataFrames.allowmissing(data::TimelineTable{true}) = data
+
+# function DataFrames.dropmissing(data::TimelineTable{true})
+#     TimelineTable(
+#         parent(data),
+#         data_id(data),
+#         AllowMissing{false},
+#         data_dates(data),
+#         DictIndex(names(data)),
+#         data_missing_bdays(data),
+#         norm_dates(data)
+#     )
+# end
+
+# function DataFrames.allowmissing(data::TimelineTable{false})
+#     TimelineTable(
+#         parent(data),
+#         data_id(data),
+#         AllowMissing{true},
+#         data_dates(data),
+#         DictIndex(names(data)),
+#         data_missing_bdays(data),
+#         norm_dates(data)
+#     )
+# end
+
+raw_values(x::DataVector) = x.data
+data_missing_bdays(x::DataVector) = x.missing_bdays
+
+
+interval(x::DataVector) = x.interval
+interval(data::MarketData{T}, id::T, col::Union{Symbol, String, ContinuousTerm, Term}) where {T} = interval(data[id, col])
+function interval(data::MarketData{T}, id::T, col::FunctionTerm{Forig, Fanon, Names}) where {T, Forig, Fanon, Names}
+    maximin(interval.(Ref(data), id, Names)...)
 end
-function DataFrames.select!(data::TimelineTable, cols::Vector{TimelineColumn})
-    updates = sort(cols) != sort(names(data)) # if the columns are changing, then update dates and missing_bdays
-    data.cols = DictIndex(cols)
-    if updates
-        data.dates = dates_min_max(get_all_dates(data))
-        data.missing_bdays = combine_all_missing_bdays(data)
-    end
-    data
+function interval(data::MarketData{T}, id::T, col::InteractionTerm) where {T}
+    maximin(interval.(Ref(data), id, col.terms)...)
+end
+function interval(data::MarketData{T}, id::T, col::StatsModels.LeadLagTerm{<:Any, typeof(lead)}) where {T}
+    r = interval(data[id, col.term])
+    maximin(r, r .- col.nsteps)
+end
+function interval(data::MarketData{T}, id::T, col::StatsModels.LeadLagTerm{<:Any, typeof(lag)}) where {T}
+    r = interval(data[id, col.term])
+    maximin(r, r .+ col.nsteps)
 end
 
-function get_all_dates(data::MarketData{T}, id::T, cols::Vector{TimelineColumn}) where {T}
-    shift_dates.(
-        pick_data.(Ref(data), id, Symbol.(cols)),
-        shift_count.(cols)
-    )
-end
+interval(data::MarketData{T}, id::T, col::InterceptTerm{true}) where {T} = interval(data[id, :intercept])
 
-function get_all_dates(data::TimelineTable)
-    get_all_dates(parent(data), data.id, names(data))
-end
-
-function combine_all_missing_bdays(data::TimelineTable)
-    out = sparsevec(
-        zeros(
-            Bool,
-            bdayscount(
-                calendar(data),
-                dt_min(data_dates(data)),
-                dt_max(data_dates(data))
-            ) + 1
-        )
-    )
-    for col in names(data)
-        mssngs = data_missing_bdays(data[Symbol(col)]) # get based on symbol here since if there are no missings
-        # then skip the next step, if there are missings then fetch the new vector and adjust
-        if nnz(mssngs) > 0
-            out = out .| get_missing_bdays(data[col], data_dates(data))
-        end
-    end
-    out
-end
-
-raw_values(x::CalendarData) = x.data
-data_dates(x::CalendarData) = x.dates
-data_missing_bdays(x::CalendarData) = x.missing_bdays
-
-data_dates(x::TimelineTable) = x.dates
-data_missing_bdays(x::TimelineTable) = x.missing_bdays
-norm_dates(x::TimelineTable) = x.req_dates
-parent(data::TimelineTable) = data.parent
-data_id(data::TimelineTable) = data.id
-
-calendar(x::CalendarData) = x.calendar
 calendar(x::MarketData) = x.calendar
-calendar(x::TimelineTable) = calendar(parent(x))
-
-firmdata(data::MarketData{T}, i::T, sym::Symbol) where {T} = data.firmdata[i][sym]
-marketdata(data::MarketData, sym::Symbol) = data.marketdata[sym]
-pick_data(data::MarketData{T, MNames, FNames}, id::T, sym::Symbol) where {T, MNames, FNames} = sym ∈ FNames ? firmdata(data, id, sym) : marketdata(data, sym)
-
-pick_data(data::MarketData{T}, id::T, col::TimelineColumn) where {T} = pick_data(data, id, Symbol(col))
 
 data_dates(x::MarketData) = x.dates
 
-data_loc(data::MarketData{T, MNames, FNames}, sym::Symbol) where {T, MNames, FNames} = sym ∈ FNames ? :firmdata : :marketdata
-function data_loc(data::MarketData{T, MNames, FNames}, syms::Vector{Symbol}) where {T, MNames, FNames}
-    all_locs = data_loc.(Ref(data), syms)
-    (
-        syms[all_locs .== :firmdata],
-        syms[all_locs .== :marketdata]
-    )
-end
 
-
-function Base.show(io::IO, data::MarketData{T, MNames, FNames}) where {T, MNames, FNames}
+function Base.show(io::IO, data::MarketData{T}) where {T}
     println(io, "MarketData with ID type $T with $(length(getfield(data, :firmdata))) unique firms")
     println(io, data.calendar)
-    println(io, "Market Columns: $(join(MNames, ", "))")
-    println(io, "Firm Columns: $(join(FNames, ", "))")
-end
-
-function Base.show(io::IO, data::TimelineTable{Mssng, T, MNames, FNames}) where {Mssng, T, MNames, FNames}
-    println(io, "TimelineTable for $(data_id(data)) and available columns $(join([MNames..., FNames...], ","))")
-    println(io, "Maximum dates given current column selection: $(data_dates(data))")
-    println(io, "Currently selected dates: $(norm_dates(data))")
-    pretty_table(io, data; header = vcat(["Date"], names(data)), tf=tf_simple)
+    println(io, "Market Columns: $(join(keys(data.marketdata), ", "))")
+    println(io, "Firm Columns: $(join(keys(data.firmdata[first(keys(data.firmdata))]), ", "))")
 end
 
 dt_min(x::ClosedInterval{Date}) = x.left
-dt_min(x::TimelineTable) = dt_min(norm_dates(x))
-dt_min(x::CalendarData) = dt_min(data_dates(x))
 dt_max(x::ClosedInterval{Date}) = x.right
-dt_max(x::TimelineTable) = dt_max(norm_dates(x))
-dt_max(x::CalendarData) = dt_max(data_dates(x))
 
-cal_dt_min(x::CalendarData) = cal_dt_min(calendar(x))
-cal_dt_max(x::CalendarData) = cal_dt_max(calendar(x))
-cal_dt_min(x::TimelineTable) = cal_dt_min(calendar(x))
-cal_dt_max(x::TimelineTable) = cal_dt_max(calendar(x))
+
 cal_dt_min(x::MarketData) = cal_dt_min(calendar(x))
 cal_dt_max(x::MarketData) = cal_dt_max(calendar(x))
+
+##################################
+# transformation function to add new column to data
+# this is not necessarily optimized, but is
+# faster for columns that are in marketdata
+##################################
+
+in_market_data(data::MarketData, t::Symbol) = t ∈ keys(data.marketdata)
+in_market_data(data::MarketData, t::ContinuousTerm) = in_market_data(data, t.sym)
+in_market_data(data::MarketData, t::InteractionTerm) = all(in_market_data.(Ref(data), t.terms))
+in_market_data(data::MarketData, t::StatsModels.LeadLagTerm) = in_market_data(data, t.term)
+in_market_data(data::MarketData, t::FunctionTerm{Fo, Fa, Names}) where {Fo, Fa, Names} = all(in_market_data.(Ref(data), Names))
+
+function DataFrames.transform!(
+    data::MarketData,
+    f::FormulaTerm
+)
+    sch = apply_schema(f, schema(f, data))
+    coef_new = coefnames(sch.lhs) |> Symbol
+    if all(in_market_data.(Ref(data), sch.rhs.terms))
+        id = first(keys(data.firmdata))
+        rs = maximin((interval(data, id, t) for t in sch.rhs.terms)...)
+        mssngs = combine_missing_bdays(get_missing_bdays.(Ref(data), id, Ref(rs), sch.rhs.terms)...)
+        vals = fill(0.0, length(rs))
+        for t in sch.rhs.terms
+            vals = vals .+ data[id, rs, t, nothing] # no missings since the vector should equal 0 for those and the mssngs data will be for that
+        end
+        data.marketdata[coef_new] = DataVector(
+            OffsetVector(vals, first(rs)-1),
+            mssngs,
+            rs
+        )
+    else
+        for id in keys(data.firmdata)
+            rs = maximin((interval(data, id, t) for t in sch.rhs.terms)...)
+            mssngs = combine_missing_bdays(get_missing_bdays.(Ref(data), id, Ref(rs), sch.rhs.terms)...)
+            vals = fill(0.0, length(rs))
+            for t in sch.rhs.terms
+                vals = vals .+ data[id, rs, t, nothing] # no missings since the vector should equal 0 for those and the mssngs data will be for that
+            end
+            data.firmdata[id][coef_new] = DataVector(
+                OffsetVector(vals, first(rs)-1),
+                mssngs,
+                rs
+            )
+        end
+    end
+end
+
+function adjust_formula(f; check_intercept=true)
+    if !check_intercept
+        f
+    elseif !StatsModels.omitsintercept(f) & !StatsModels.hasintercept(f)
+        FormulaTerm(f.lhs, InterceptTerm{true}() + f.rhs);
+    elseif StatsModels.omitsintercept(f)
+        FormulaTerm(f.lhs, Tuple(r for r in f.rhs if !isa(r, ConstantTerm)))
+    else
+        f
+    end
+end

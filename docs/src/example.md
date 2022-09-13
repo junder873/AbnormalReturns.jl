@@ -23,15 +23,16 @@ df_events = @chain df_events begin
     @transform(:reg = quick_reg(mkt_data[:permno, :est_start .. :est_end], @formula(ret ~ mkt + smb + hml)))
     @transform(
         :bhar_reg = bhar(mkt_data[:permno, :event_start .. :event_end], :reg),
-        :bhar_simple = bhar(mkt_data[:permno, :event_start .. :event_end], "ret", "mkt"),
+        :bhar_simple = bhar(mkt_data[:permno, :event_start .. :event_end, ["ret", "mkt"]]),
         :car_reg = car(mkt_data[:permno, :event_start .. :event_end], :reg),
-        :car_simple = car(mkt_data[:permno, :event_start .. :event_end], "ret", "mkt"),
+        :car_simple = car(mkt_data[:permno, :event_start .. :event_end, ["ret", "mkt"]]),
+        :total_ret = bh_return(mkt_data[:permno, :event_start .. :event_end, ["ret"]]),
+        :total_mkt_ret = bh_return(mkt_data[:permno, :event_start .. :event_end, ["mkt"]]),
     )
     @rtransform(
         :std = std(:reg),
         :var = var(:reg),
-        :total_ret = bh_return(mkt_data[:permno, :event_start .. :event_end], "ret"),
-        :total_mkt_ret = bh_return(mkt_data[:permno, :event_start .. :event_end], "mkt"),
+
     )
     select(Not([:est_start, :est_end, :event_start, :event_end, :reg]))
     # columns eliminated to save space:
@@ -42,9 +43,9 @@ show(df_events) # hide
 
 ## Data
 
-For the basic data, this uses the files in the test folder of this package ("test\data"). The "daily\_ret.csv" file is a selection of firm returns, while "mkt\_ret.csv" includes the average market return along with some Fama-French factor returns, you can download similar Fama-French data from [here](https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/data_library.html) and stock market data from [AlphaVantage.jl](https://github.com/ellisvalentiner/AlphaVantage.jl) or [WRDSMerger.jl](https://github.com/junder873/WRDSMerger.jl) (requires access to the WRDS database).
+For the basic data, this uses the files in the test folder of this package ("test\data"). The "daily\_ret.csv" file is a selection of firm returns, while "mkt\_ret.csv" includes the average market return along with some Fama-French factor returns, you can download similar Fama-French data from [here](https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/data_library.html) or from [FamaFrenchData.jl](https://github.com/tbeason/FamaFrenchData.jl) and stock market data from [AlphaVantage.jl](https://github.com/ellisvalentiner/AlphaVantage.jl) or [WRDSMerger.jl](https://github.com/junder873/WRDSMerger.jl) (requires access to the WRDS database).
 
-The firm data uses "Permno" to identify a stock. This package will work with other identifiers, as long as the identifier-date pair is unique.
+The firm data uses "Permno" to identify a stock. This package will work with other identifiers, as long as the identifier-date pair is unique. However, Integers and Symbols will often be fastest (as opposed to String identifiers).
 
 ```@setup main_run
 data_dir = joinpath("..", "..", "test", "data") # hide
@@ -60,7 +61,6 @@ show(df_firm) # hide
 and the market data:
 ```@example main_run
 df_mkt = CSV.File(joinpath(data_dir, "mkt_ret.csv")) |> DataFrame
-df_mkt[!, :mkt] = df_mkt.mktrf .+ df_mkt.rf
 show(df_mkt) # hide
 ```
 
@@ -74,9 +74,10 @@ mkt_data = MarketData(
     id_col=:permno,# default
     date_col_firms=:date,# default
     date_col_market=:date,# default
+    add_intercept_col=true,# default
     valuecols_firms=[:ret],# defaults to nothing, in which case
     # all columns other than id and date are used
-    valuecols_market=[:mkt, :smb, :hml, :umd]# defaults to
+    valuecols_market=[:mktrf, :rf, :smb, :hml, :umd]# defaults to
     # nothing, in which case all columns other than date are used
 )
 show(mkt_data) # hide
@@ -89,30 +90,30 @@ This object rearranges the data so it can be quickly accessed later. The `mkt_da
 2. Each column of the `df_mkt` stored
 3. Each column of the `df_firm` stored in a `Dict` for each firm.
 
-Data is accessed on a by firm basis. For example, the "Permno" for Oracle (ORCL) is 10104:
+Data is accessed on a by firm basis, for a given date range and specific columns. For example, say you wanted to get the data for Oracle (ORCL) ("Permno" of 10104), for a specific date (using [EllipsisNotation.jl](https://github.com/ChrisRackauckas/EllipsisNotation.jl)) and set of columns:
 ```@repl main_run
-orcl_data = mkt_data[10104]
+orcl_data = mkt_data[10104, Date(2020) .. Date(2020, 6, 30), [:ret, :mktrf, :smb]]
 ```
 
-You can also request a specific range of dates and columns using [EllipsisNotation.jl](https://github.com/ChrisRackauckas/EllipsisNotation.jl):
+Sometimes it is helpful to add a new column (either for convenience or performance reasons, discussed later). To do so, this package borrows the `transform!` function from [DataFrames.jl](https://github.com/JuliaData/DataFrames.jl), using a formula where the left side is the column that is created:
 ```@repl main_run
-orcl_data = mkt_data[10104, Date(2020) .. Date(2020, 6, 30), [:ret, :mkt, lag(:mkt)]]
+transform!(mkt_data, @formula(mkt ~ mktrf + rf));
 ```
 
-The dates requested only matter for what is output, internally all data is still stored. In this way, the parameters are largely a "view" into the `mkt_data` object, allowing for quick updating. For example, changing the dates is just:
+It is also easy to specify the columns as a formula from [StatsModels.jl](https://github.com/JuliaStats/StatsModels.jl). This allows for arbitrary functions, interactions and lags/leads:
 ```@repl main_run
-AbnormalReturns.update_dates!(orcl_data, Date(2020, 7, 1) .. Date(2020, 7, 5))
+orcl_data = mkt_data[10104, Date(2020) .. Date(2020, 6, 30), @formula(ret ~ mkt + lag(mkt) + log1p(smb) * hml)]
 ```
+!!! note
+    While interactions and arbitrary functions are supported, they can significantly slow down performance since a new vector is allocated in each call. Therefore, it is generally recommended to create a new pice of data by calling `transform!` on the dataset to create the new columns. This advice does not apply to lag/lead terms since those do not need to allocate a new column.
 
-There are similar functions for `update_id!` (changing the firm ID) and `select!` (changing the columns).
-
-Finally, by default, returned data is not missing. This is to make the regressions faster/easier later, since missing data does not work for those. You can change between allowing or not allowing missing data with `allowmissing` and `dropmissing`:
+The data returned by accessing `mkt_data` is a `FixedTable`, which is essentially a matrix with a fixed width (useful for multiplication and returning a `StaticMatrix` from [StaticArrays.jl](https://github.com/JuliaArrays/StaticArrays.jl)). Access into this data is done either by a slice as you would any other matrix:
 ```@repl main_run
-no_missings = mkt_data[18428, Date(2019, 3, 28) .. Date(2019, 4, 5)]
+orcl_data[:, 1]
 ```
-
+Or via the names used to access it in the first place:
 ```@repl main_run
-with_missings = allowmissing(no_missings)
+orcl_data[:, :mkt]
 ```
 
 ## Estimating Regressions
@@ -138,9 +139,9 @@ orcl_data = mkt_data[10104, est_start .. est_end]
 rr = quick_reg(orcl_data, @formula(ret ~ mkt + smb + hml))
 ```
 
-Then change the table to the event window:
+Then get the data for the event window:
 ```@repl main_run
-AbnormalReturns.update_dates!(orcl_data, event_start .. event_end)
+orcl_data = mkt_data[10104, event_start .. event_end];
 ```
 
 Now it is easy to run some statistics for the event window:
@@ -148,10 +149,6 @@ Now it is easy to run some statistics for the event window:
 bhar(orcl_data, rr) # BHAR based on regression
 
 car(orcl_data, rr) # CAR based on regression
-
-bhar(orcl_data, "ret") # BHAR relative to market return
-
-bh_return(orcl_data, "ret") #  Total firm return during event window
 ```
 
 It is also easy to calculate some statistics for the estimation window:
@@ -165,7 +162,7 @@ alpha(rr) # Firm's market alpha
 
 ## More Data Using DataFramesMeta
 
-While the above works well, abnormal returns are often calculated on thousands or more firm-events. Here, I earnings announcements for about 100 firms from March to November 2020:
+While the above works well, abnormal returns are often calculated on thousands or more firm-events. Here, I use earnings announcements for about 100 firms from March to November 2020:
 ```@repl main_run
 df_events = CSV.File(joinpath(data_dir, "firm_earnings_announcements.csv")) |> DataFrame
 ```
@@ -183,9 +180,9 @@ df_events = @chain df_events begin
     @rtransform(:reg = quick_reg(mkt_data[:permno, :est_start .. :est_end], @formula(ret ~ mkt + smb + hml)))
     @rtransform(
         :bhar_reg = bhar(mkt_data[:permno, :event_start .. :event_end], :reg),
-        :bhar_simple = bhar(mkt_data[:permno, :event_start .. :event_end], "ret", "mkt"),
+        :bhar_simple = bhar(mkt_data[:permno, :event_start .. :event_end, ["ret", "mkt"]]),
         :std = std(:reg),
-        :total_ret = bh_return(mkt_data[:permno, :event_start .. :event_end], "ret"),
+        :total_ret = bh_return(mkt_data[:permno, :event_start .. :event_end, ["ret"]]),
     )
     select(Not([:est_start, :est_end, :event_start, :event_end, :reg]))
 end
@@ -194,20 +191,29 @@ show(df_events) # hide
 
 ## Vectorizing the Data
 
-While the above works, and is reasonably fast (Doing a test on 1 million regressions takes about 65 seconds on a Ryzen 5 3600), faster is better.
+While the above works, and is reasonably fast (Doing a test on 1 million regressions takes about 26 seconds on a Ryzen 7 5700X), faster is better.
 
-In particular, this process can be very fast if all the predictor variables in a regression are based on the market data (as they are above). This allows a single RHS matrix to be built and to just select the necessary rows from that matrix. Further, while building the table for each firm is generally fast, if it is only necessary to build it once that is preferred.
+In particular, a significant reason the above is slow method is that the formula is parsed for each iteration. If the formula is the same for all of the cases, it is better if it is simply parsed once. Therefore, it is optimal to do as much as possible using vectors.
 
-To make this possible, request a vector of firm IDs and date starts and ends:
+To make this possible, this package provides a type `IterateFixedTable` which will return a `FixedTable` based on a supplied set of ids, dates and columns (or formula as above):
 ```@repl main_run
 est_starts = advancebdays.(mkt_data.calendar, df_events.ea, -120)
 est_ends = advancebdays.(mkt_data.calendar, df_events.ea, -2)
-vec_data = mkt_data[df_events.permno, est_starts .. est_ends]
+vec_data = mkt_data[df_events.permno, est_starts .. est_ends, [:ret, :mkt, :smb]]
+```
+
+Each element of `vec_data` is then easily accessible by an integer or can be looped over in a for loop:
+```@example main_run
+# for x in vec_data
+#     x
+# end
+# or
+vec_data[10]
 ```
 
 This object can be similarly passed to the above functions, just like a firm level table. The function will iterate through the data and return a vector of results.
 
-However, the above is rather ugly and is far less flexible (no IDs to update, etc.). A more practical way to use this is to continue using the `@chain` macro:
+However, the above is rather ugly. A more practical way to use this is to continue using the `@chain` macro:
 ```@example main_run
 df_events = @chain df_events begin
     @rtransform(
@@ -219,28 +225,14 @@ df_events = @chain df_events begin
     @transform(:reg = quick_reg(mkt_data[:permno, :est_start .. :est_end], @formula(ret ~ mkt + smb + hml)))
     @transform(
         :bhar_reg = bhar(mkt_data[:permno, :event_start .. :event_end], :reg),
-        :bhar_simple = bhar(mkt_data[:permno, :event_start .. :event_end], "ret", "mkt"),
+        :bhar_simple = bhar(mkt_data[:permno, :event_start .. :event_end, ["ret", "mkt"]]),
     )
-    @rtransform(
-        :std = std(:reg),
-        :total_ret = bh_return(mkt_data[:permno, :event_start .. :event_end], "ret"),
+    @transform(
+        :std = std.(:reg),
+        :total_ret = bh_return(mkt_data[:permno, :event_start .. :event_end, ["ret"]]),
     )
     select(Not([:est_start, :est_end, :event_start, :event_end, :reg]))
 end
 show(df_events) # hide
 ```
-Notice that the only difference between these two `@chain` macros is that this one uses `@transform` instead of `@rtransform`. This sends the entire column vector to the function, and allows for much faster overall results. Those same 1 million regressions now takes just 3 seconds on the same computer.
-
-## Lag and Lead Operators
-
-Sometimes, you might want to include a lag or lead variable in your regression. This package is designed to handle those cases. For example:
-
-```@example main_run
-quick_reg(mkt_data[10104], @formula(ret ~ lag(mkt, 2) + lag(mkt) + mkt + lead(mkt)))
-```
-
-Note that these lag and lead operators will get data from outside the requested period to prevent the sample size from shrinking. For example:
-```@example main_run
-mkt_data[10104, Date(2020) .. Date(2020, 1, 10), [:ret, :mkt, lag(:mkt)]]
-```
-The first value under "lag(mkt)" is from 2019-12-31, but this makes sure that a regression or abnormal return has all the data necessary.
+Notice that the only difference between these two `@chain` macros is that this one uses `@transform` instead of `@rtransform`. This sends the entire column vector to the function, and allows for much faster overall results. Those same 1 million regressions now takes just 0.44 seconds on the same computer.

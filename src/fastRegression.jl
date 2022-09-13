@@ -1,68 +1,40 @@
 
-struct BasicReg{L,R} <: RegressionModel
+struct BasicReg{L, R, N} <: RegressionModel
     nobs::Int
     formula::FormulaTerm{L,R}
-    coef::Vector{Float64}
-    coefnames::Vector{String}
+    coef::SVector{N, Float64}
+    coefnames::SVector{N, String}
     yname::String
     tss::Float64
     rss::Float64
     residuals::Union{Vector{Float64}, Nothing}
-    function BasicReg(nobs, formula::FormulaTerm{L,R}, coef, coefnames, yname, tss, rss, residuals) where {L,R}
+    function BasicReg(nobs, formula::FormulaTerm{L,R}, coef::SVector{N}, coefnames::SVector{N}, yname, tss, rss, residuals) where {L,R,N}
         # @assert rss >= 0 "Residual sum of squares must be greater than 0"
         # @assert tss >= 0 "Total sum of squares must be greater than 0"
         # @assert nobs >= 0 "Observations must be greater than 0"
         # @assert length(coef) == length(coefnames) "Number of coefficients must be same as number of coefficient names"
-        new{L,R}(nobs, formula, coef, coefnames, yname, tss, rss, residuals)
+        new{L,R,N}(nobs, formula, coef, coefnames, yname, tss, rss, residuals)
     end
-    BasicReg(x::Int, f::FormulaTerm{L,R}) where {L, R} = new{L,R}(x, f)
+    BasicReg{N}(x::Int, f::FormulaTerm{L,R}) where {L, R, N} = new{L,R,N}(x, f)
 end
 
-# These are created to minimize the amount of allocations Julia does
-# Julia typically allocates a vector for each loop, which when using
-# so many loops, can create real garbage collection problems
-# As it turns out, doing sum(abs2, resp - mean(resp)) also does
-# an allocation, which could mean allocating a huge amount
-# caluclating rss was even worse, so these functions are only
-# meant to be used internally but do not allocate if passed a view
-function calc_tss(resp)
-    out = 0.0
-    m = mean(resp)
-    @simd for x in resp
-        out += (x - m) ^ 2
-    end
-    out
-end
-function fast_pred(pred, coef, i)
-    out = 0.0
-    @simd for j in 1:length(coef)
-        @inbounds out += pred[i, j] * coef[j]
-    end
-    out
-end
-function calc_rss(resp, pred, coef)
-    out = 0.0
-    @simd for i in 1:length(resp)
-        @inbounds out += (resp[i] - fast_pred(pred, coef, i)) ^ 2
-    end
-    out
-end
+
 """
     function BasicReg(
-        resp::AbstractVector{Float64},
-        pred::AbstractMatrix{Float64},
+        resp::AbstractVector,
+        pred::AbstractMatrix,
         yname::String,
-        xnames::Vector{String},
+        xnames::SVector{N, String},
         f::FormulaTerm{L,R};
         save_residuals::Bool=false,
-        minobs::Int=1
+        minobs=1
     )::BasicReg{L,R} where {L,R}
 
 ## Arguments
 - resp::AbstractVector{Float64}: The "Y" or response in a linear regression
 - pred::AbstractMatrix{Float64}: The "X" matrix in a linear regression
 - yname::String: The name of the response variable
-- xnames::Vector{String}: The names of the prediction variables
+- xnames::SVector{N, String}: The names of the prediction variables
 - f::FormulaTerm{L,R}: A StatsModels.jl formula, saved in the resulting struct
 - save_residuals::Bool=false: Whether or not to save the vector of residuals from
     the regression. Note for large numbers of regressions this can significantly slow
@@ -75,24 +47,24 @@ BasicReg is an intentionally simplistic linear regression. It also attempts to p
 a minimum number of allocations if views of vectors are passed.
 """
 function BasicReg(
-    resp::AbstractVector{Float64},
-    pred::AbstractMatrix{Float64},
+    resp::AbstractVector,
+    pred::AbstractMatrix,
     yname::String,
-    xnames::Vector{String},
-    f::FormulaTerm{L,R};
+    xnames::SVector{N, String},
+    f::FormulaTerm{L, R};
     save_residuals::Bool=false,
     minobs=1
-)::BasicReg{L,R} where {L,R}
-    if length(resp) <= size(pred, 2) || length(resp) < minobs
-        return BasicReg(length(resp), f)
+) where {L, R, N}
+    if length(resp) <= size(pred)[2] || length(resp) < minobs
+        return BasicReg{N}(length(resp), f)
     end
 
-    coef = cholesky!(Symmetric(pred' * pred)) \ (pred' * resp)
+    coef = cholesky(pred' * pred) \ (pred' * resp)
 
     BasicReg(
         length(resp),
         f,
-        coef,
+        SVector{N}(coef),
         xnames,
         yname,
         calc_tss(resp),
@@ -101,35 +73,36 @@ function BasicReg(
     )
 end
 
-function create_pred_matrix(data::IterateTimelineTable, sch)
-    id = first(data)[1]
-    create_pred_matrix(
-        parent(data)[id, internal_termvars(sch.rhs), AllowMissing{true}],
-        sch
-    )
+function BasicReg(
+    tab::FixedTable{N},
+    f::FormulaTerm;
+    vargs...
+) where {N}
+    resp = pred_matrix(tab)
+    BasicReg(tab[:, 1], resp, tab.cols[1], resp.cols, f; vargs...)
 end
 
-function create_pred_matrix(data::TimelineTable{true}, sch)
-    # This allows missing to make sure all dates are in the data
 
-    mat = modelcols(sch.rhs, data)
-    DataMatrix(
-        mat,
-        data_dates(data),
-        calendar(data)
-    )
+function BasicReg(
+    tab::FixedTable{N},
+    args...;
+    vargs...
+) where {N}
+    BasicReg(tab[:, 1], pred_matrix(tab), args...; vargs...)
 end
+
+
 
 """
     quick_reg(
-        data::TimelineTable{false},
+        data::FixedTable,
         f::FormulaTerm;
         minobs::Real=0.8,
         save_residuals::Bool=false
     )
 
     quick_reg(
-        data::IterateTimelineTable,
+        data::IterateFixedTable,
         f::FormulaTerm;
         minobs::Real=0.8,
         save_residuals::Bool=false
@@ -138,8 +111,8 @@ end
 Calculates a linear regression for the supplied data based on the formula (formula from StatsModels.jl).
 Unless the formula explicitly excludes the intercept (i.e., `@formula(y ~ 0 + x)`), an intercept is added.
 
-If `data` is of the type `IterateTimelineTable`, then the formula is applied to each `TimelineTable` in an
-optimized way and returns a `Vector{BasicReg}`.
+If `data` is of the type `IterateFixedTable`, then the function uses the maximum number of threads
+on each `FixedTable` in an optimized way and returns a `Vector{BasicReg}`.
 
 ## Arguments
 - `minobs::Real`: The minimum number of observations to return a completed regression. If less than 1,
@@ -150,113 +123,62 @@ optimized way and returns a `Vector{BasicReg}`.
 
 """
 function quick_reg(
-    data::TimelineTable{false},# only works if no missing data for multiplication
-    f::FormulaTerm;
-    minobs::V=0.8,
+    data::IterateFixedTable{T, N},
+    f::FormulaTerm{L, R};
+    minobs=0.8,
     save_residuals::Bool=false
-) where {V<:Real}
-
-    if !StatsModels.omitsintercept(f) & !StatsModels.hasintercept(f)
-        f = FormulaTerm(f.lhs, InterceptTerm{true}() + f.rhs)
+) where {T, N, L, R}
+    out = Vector{BasicReg{L, R, N-1}}(undef, length(data))
+    Threads.@threads for i in 1:length(data)
+        x = data[i]
+        out[i] = BasicReg(x, f; minobs=adjust_minobs(minobs, x), save_residuals)
     end
-    sch = apply_schema(f, schema(f, data))
-    select!(data, internal_termvars(sch))
-
-    
-    resp, pred = modelcols(sch, data)
-    yname, xnames = coefnames(sch)
-    BasicReg(
-        resp,
-        pred,
-        yname,
-        xnames,
-        f;
-        save_residuals,
-        minobs=adjust_minobs(minobs, calendar(data), norm_dates(data))
-    )
+    out
 end
-
-function fill_vector_reg!(
-    out_vector::Vector{BasicReg{L,R}},
-    iter_data::IterateTimelineTable{T},
-    cache::DataMatrix,
-    sch::FormulaTerm,
-    f::FormulaTerm{L,R};
+function quick_reg(
+    data::Tuple,
+    f::FormulaTerm{L, R};
+    minobs=0.8,
     save_residuals::Bool=false,
-    minobs=0.8
-) where {T, L, R}
-    @assert validate_iterator(iter_data, out_vector) "Length of out_vector does not match the number of indexes in the iterator"
-    cols = internal_termvars(sch)
-    yname, xnames = coefnames(sch)
-    
-    Threads.@threads for (u_id, iter_indexes) in iter_data
-        data = parent(iter_data)[u_id, cols, AllowMissing{true}]
-        resp = datavector_modelcols(int_lhs(sch), data)
-        for iter in iter_indexes
-            cur_dates = dates_min_max(data_dates(data), iter_dates(iter))
-            if nnz(data_missing_bdays(data)) == 0
-                x = view(resp, cur_dates)
-                y = view(cache, cur_dates)
-            else
-                new_mssngs = get_missing_bdays(data, cur_dates)
-                x = view(resp, cur_dates, new_mssngs)
-                y = view(cache, cur_dates, new_mssngs)
-            end
-            @inbounds out_vector[iter_index(iter)] = BasicReg(
-                x,
-                y,
-                yname,
-                xnames,
-                f;
-                save_residuals,
-                minobs=adjust_minobs(minobs, calendar(parent(data)), iter_dates(iter))
-            )
-        end
-    end
-    out_vector
+    check_intercept=true
+) where {L, R}
+    f = adjust_formula(f; check_intercept)
+    final_data = data[1][data[2:end]..., f, check_intercept=false]
+    quick_reg(final_data, f; minobs, save_residuals)
+
 end
+
+
 
 function quick_reg(
-    data::IterateTimelineTable,
+    data::FixedTable,
     f::FormulaTerm;
-    minobs::V=0.8,
+    minobs=0.8,
     save_residuals::Bool=false
-) where {V<:Real}
-    if !StatsModels.omitsintercept(f) & !StatsModels.hasintercept(f)
-        f = FormulaTerm(f.lhs, InterceptTerm{true}() + f.rhs)
-    end
-    sch = apply_schema(f, schema(f, parent(data)))
-    cache = create_pred_matrix(data, sch)
-    out = fill(BasicReg(0, f), total_length(data))
-    fill_vector_reg!(
-        out,
-        data,
-        cache,
-        sch,
-        f;
-        save_residuals,
-        minobs
-    )
+)
+    BasicReg(data, f; minobs=adjust_minobs(minobs, data), save_residuals)
 end
 
+
+StatsBase.predict(mod::BasicReg{L, R, N}, x::FixedTable{N}) where {L, R, N} = x * coef(mod)
 StatsBase.predict(mod::BasicReg, x) = x * coef(mod)
 
-StatsBase.coef(x::BasicReg) = isdefined(x, :coef) ? x.coef : missing
-StatsBase.coefnames(x::BasicReg) = isdefined(x, :coef) ? x.coefnames : missing
-StatsBase.responsename(x::BasicReg) = isdefined(x, :coef) ? x.yname : missing
+StatsBase.coef(x::BasicReg) = isdefined(x, :coefnames) ? x.coef : missing
+StatsBase.coefnames(x::BasicReg) = isdefined(x, :coefnames) ? x.coefnames : missing
+StatsBase.responsename(x::BasicReg) = isdefined(x, :coefnames) ? x.yname : missing
 StatsBase.nobs(x::BasicReg) = x.nobs
-StatsBase.dof_residual(x::BasicReg) = isdefined(x, :coef) ? nobs(x) - length(coef(x)) : missing
+StatsBase.dof_residual(x::BasicReg{L, R, N}) where {L, R, N} = isdefined(x, :coefnames) ? nobs(x) - N : missing
 StatsBase.r2(x::BasicReg) = 1 - (rss(x) / deviance(x))
 StatsBase.adjr2(x::BasicReg) = 1 - rss(x) / deviance(x) * (nobs(x) - 1) / dof_residual(x)
 StatsBase.islinear(x::BasicReg) = true
-StatsBase.deviance(x::BasicReg) = isdefined(x, :coef) ? x.tss : missing
-StatsBase.rss(x::BasicReg) = isdefined(x, :coef) ? x.rss : missing
+StatsBase.deviance(x::BasicReg) = isdefined(x, :coefnames) ? x.tss : missing
+StatsBase.rss(x::BasicReg) = isdefined(x, :coefnames) ? x.rss : missing
 function StatsBase.residuals(x::BasicReg)
-    if !isdefined(x, :coef)
+    if !isdefined(x, :coefnames)
         return missing
     end
     if x.residuals === nothing
-        @error("To access residuals, run `cache_reg` with the option `save_residuals=true`")
+        @error("To access residuals, run `quick_reg` with the option `save_residuals=true`")
     else
         x.residuals
     end
@@ -276,14 +198,9 @@ function rhs_str(nms, vals; intercept = "(Intercept)")
 end
 
 function Base.show(io::IO, rr::BasicReg)
-    if !isdefined(rr, :coef)
+    if !isdefined(rr, :coefnames)
         print(io, "Obs: $(nobs(rr)), $(rr.formula)")
     else
         print(io, "Obs: $(nobs(rr)), $(responsename(rr)) ~ $(rhs_str(coefnames(rr), coef(rr))), AdjR2: ", round(adjr2(rr) * 100, digits=3), "%")
-        # mat = hcat(
-        #     coefnames(rr),
-        #     string.(round.(coef(rr), digits=3))
-        # )
-        # PrettyTables.pretty_table(io, mat)
     end
 end

@@ -1,4 +1,4 @@
-using DataFrames, CSV, DataFramesMeta, Dates, BenchmarkTools, Cthulhu
+using DataFrames, CSV, DataFramesMeta, Dates, BenchmarkTools, SparseArrays, StaticArrays, LinearAlgebra
 using Revise
 using AbnormalReturns
 
@@ -10,10 +10,10 @@ df_events = CSV.File(joinpath("data", "event_dates.csv")) |> DataFrame
 
 ##
 @time data = MarketData(df_mkt, df_firm; id_col=:firm_id, valuecols_firms=[:ret])
-# First run R5 3600: 29.455642 seconds (32.05 M allocations: 13.431 GiB, 7.98% gc time, 38.13% compilation time)
-# Second run R5 3600: 17.942238 seconds (669.24 k allocations: 11.774 GiB, 11.31% gc time)
-# First run i7 6700: 37.776454 seconds (32.06 M allocations: 13.430 GiB, 30.23% gc time, 32.16% compilation time)
-# Second run i7 6700: 18.069534 seconds (669.95 k allocations: 11.774 GiB, 15.21% gc time)
+# First run R7 5700X: 16.141040 seconds (35.39 M allocations: 13.239 GiB, 14.37% gc time, 56.56% compilation time)
+# Second run R7 5700X: 5.998991 seconds (547.61 k allocations: 11.431 GiB, 29.92% gc time)
+# First run i7 6700: 31.045712 seconds (35.03 M allocations: 13.222 GiB, 32.21% gc time, 64.39% compilation time)
+# Second run i7 6700: 11.217124 seconds (537.50 k allocations: 11.431 GiB, 25.19% gc time)
 
 ##
 df_firm = nothing
@@ -25,74 +25,43 @@ GC.gc()
     @transform(:reg_mkt = quick_reg(data[:firm_id, :est_window_start .. :est_window_end], @formula(ret ~ mkt)),)
     @transform(:reg_ffm = quick_reg(data[:firm_id, :est_window_start .. :est_window_end], @formula(ret ~ mkt + smb + hml + umd)),)
     @transform(
-        :bhar_mkt = AbnormalReturns.bhar(data[:firm_id, :est_window_start .. :est_window_end], :reg_mkt),
-        :bhar_ffm = AbnormalReturns.bhar(data[:firm_id, :est_window_start .. :est_window_end], :reg_ffm),
-        # :bhar_simple = bhar(data[:firm_id, :est_window_start .. :est_window_end], ^(:ret), ^(:mkt)),
-        # :car_simple = car(data[:firm_id, :est_window_start .. :est_window_end], ^(:ret), ^(:mkt))
+        :bhar_mkt = bhar(data[:firm_id, :est_window_start .. :est_window_end], :reg_mkt),
+        :bhar_ffm = bhar(data[:firm_id, :est_window_start .. :est_window_end], :reg_ffm),
     )
     @rtransform(
         :var_mkt = var(:reg_mkt),
         :var_ffm = var(:reg_ffm),
+    )
+    @transform(
         :alpha = alpha(:reg_mkt),
         :beta = beta(:reg_mkt),
     )
 end
-# First run R5 3600: 19.867720 seconds (63.84 M allocations: 5.861 GiB, 13.96% gc time, 52.57% compilation time)
-# Second run R5 3600: 8.928954 seconds (37.73 M allocations: 4.539 GiB, 17.06% gc time, 0.94% compilation time)
-# First run i7 6700: 33.919134 seconds (64.13 M allocations: 5.936 GiB, 45.39% gc time, 65.25% compilation time)
-# Second run i7 6700: 19.343996 seconds (37.73 M allocations: 4.602 GiB, 62.63% gc time, 0.44% compilation time)
+# First run R7 5700X: 9.017057 seconds (30.39 M allocations: 3.184 GiB, 10.33% gc time, 85.86% compilation time)
+# Second run R7 5700X: 1.453299 seconds (7.18 M allocations: 1.988 GiB, 13.25% gc time, 5.04% compilation time)
+# First run i7 6700: 28.656179 seconds (33.49 M allocations: 3.360 GiB, 53.20% gc time, 90.52% compilation time)
+# Second run i7 6700: 3.095861 seconds (7.13 M allocations: 1.985 GiB, 2.87% compilation time)
 
 ##
 
 
-cols = TimelineColumn.([:ret, :mkt, :smb, :hml, :umd])
-@time @chain df_events[1:1000000, :] begin
-    @rtransform(:reg = quick_reg(data[:firm_id, :est_window_start .. :est_window_end, cols], @formula(ret ~ mkt + smb + hml + umd)),)
+@time @chain df_events begin # parse formula every time and perform all checks each time
+    @rtransform(:reg = quick_reg(data[:firm_id, :est_window_start .. :est_window_end], @formula(ret ~ mkt + smb + hml + umd)),)
 end
-# Run R5 3600: 64.389570 seconds (370.13 M allocations: 88.340 GiB, 15.36% gc time, 0.14% compilation time)
+# Run R7 5700X: 26.472138 seconds (360.50 M allocations: 25.194 GiB, 11.69% gc time, 2.24% compilation time)
+# i7 6700: 231.401211 seconds (363.87 M allocations: 25.336 GiB, 83.97% gc time, 0.04% compilation time)
 
 ##
 
-@time @chain df_events[1:1000000, :] begin
+@time @chain df_events begin # full multithread
     @transform(:reg = quick_reg(data[:firm_id, :est_window_start .. :est_window_end], @formula(ret ~ mkt + smb + hml + umd)),)
 end
-# Run R5 3600: 2.824239 seconds (8.57 M allocations: 1.336 GiB, 1.89% compilation time)
+# Run R7 5700X: 0.437344 seconds (2.07 M allocations: 637.053 MiB, 5.50% compilation time)
+
 ##
-@time @chain df_events[1:1000000, :] begin
-    @transform(:bhar = bhar(data[:firm_id, :est_window_start .. :est_window_end]),)
+
+@time @chain df_events begin # not multi threaded
+    @transform(:reg = quick_reg.(data[:firm_id, :est_window_start .. :est_window_end, @formula(ret ~ mkt + smb + hml + umd)], Ref(@formula(ret ~ mkt + smb + hml + umd))),)
 end
-##
-quick_reg(data[1, Date(2017) .. Date(2018), cols], @formula(ret ~ mkt + smb + hml + umd))
-##
-
-
-@benchmark $data[i, TimelineColumn.([:ret, :mkt, :smb, :hml, :umd])] setup=(i=rand(1:10000))
-##
-
-
-# i = 151465
-# ids = df_events.firm_id[1:100]
-# date_mins = df_events.est_window_start[1:100]
-# date_maxs = df_events.est_window_end[1:100]
-# f = @formula(ret ~ mkt + smb + hml + umd)
-# cols = AbnormalReturns.internal_termvars(f)
-# data_dict = AbnormalReturns.construct_id_dict(ids)
-# sch = apply_schema(f, schema(f, data))
-# cache = AbnormalReturns.create_pred_matrix(data[1], sch)
-# out = fill(BasicReg(0, f), length(ids))
-
-# int_data = data[1]
-
-
-
-b = @benchmarkable AbnormalReturns.vector_reg(
-    $data,
-    $ids,
-    $date_mins,
-    $date_maxs,
-    $f,
-)
-b.params.evals=100
-b.params.seconds=100
-run(b)
-##
+# Run R7 5700X: 2.890529 seconds (4.91 M allocations: 795.016 MiB, 5.99% gc time, 6.97% compilation time)
+# i7 6700: 4.215225 seconds (4.08 M allocations: 752.040 MiB, 1.12% compilation time)

@@ -191,7 +191,7 @@ show(df_events) # hide
 
 ## Vectorizing the Data
 
-While the above works, and is reasonably fast (Doing a test on 1 million regressions takes about 15 seconds on a Ryzen 5 3600), faster is better.
+While the above works, and is reasonably fast (Doing a test on 1 million regressions takes about 26 seconds on a Ryzen 7 5700X), faster is better.
 
 In particular, a significant reason the above is slow method is that the formula is parsed for each iteration. If the formula is the same for all of the cases, it is better if it is simply parsed once. Therefore, it is optimal to do as much as possible using vectors.
 
@@ -235,4 +235,4 @@ df_events = @chain df_events begin
 end
 show(df_events) # hide
 ```
-Notice that the only difference between these two `@chain` macros is that this one uses `@transform` instead of `@rtransform`. This sends the entire column vector to the function, and allows for much faster overall results. Those same 1 million regressions now takes just 1.5 seconds on the same computer.
+Notice that the only difference between these two `@chain` macros is that this one uses `@transform` instead of `@rtransform`. This sends the entire column vector to the function, and allows for much faster overall results. Those same 1 million regressions now takes just 0.44 seconds on the same computer.

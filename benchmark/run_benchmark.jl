@@ -45,7 +45,7 @@ end
 ##
 
 
-@time @chain df_events[1:1000000, :] begin
+@time @chain df_events begin # parse formula every time and perform all checks each time
     @rtransform(:reg = quick_reg(data[:firm_id, :est_window_start .. :est_window_end], @formula(ret ~ mkt + smb + hml + umd)),)
 end
 # Run R7 5700X: 26.472138 seconds (360.50 M allocations: 25.194 GiB, 11.69% gc time, 2.24% compilation time)
@@ -53,7 +53,14 @@ end
 
 ##
 
-@time @chain df_events[1:1000000, :] begin
+@time @chain df_events begin # full multithread
+    @transform(:reg = quick_reg(data[:firm_id, :est_window_start .. :est_window_end], @formula(ret ~ mkt + smb + hml + umd)),)
+end
+# Run R7 5700X: 0.437344 seconds (2.07 M allocations: 637.053 MiB, 5.50% compilation time)
+
+##
+
+@time @chain df_events begin # not multi threaded
     @transform(:reg = quick_reg.(data[:firm_id, :est_window_start .. :est_window_end, @formula(ret ~ mkt + smb + hml + umd)], Ref(@formula(ret ~ mkt + smb + hml + umd))),)
 end
 # Run R7 5700X: 2.890529 seconds (4.91 M allocations: 795.016 MiB, 5.99% gc time, 6.97% compilation time)

@@ -11,7 +11,6 @@ using IntervalSets: ClosedInterval, Ellipsis, (..)
 using SparseArrays
 @reexport using BusinessDays
 @reexport using StatsModels
-using ShiftedArrays
 using StaticArrays
 using OffsetArrays
 
@@ -36,8 +35,6 @@ export coef, coefnames, responsename, nobs, dof_residual,
     r2, adjr2, islinear, deviance, rss, predict
 
 export ClosedInterval, ..
-
-export lag, lead
 
 ##############################################################################
 ##

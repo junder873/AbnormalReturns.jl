@@ -9,7 +9,7 @@ Calculating abnormal returns typically requires running regressions on a slice o
 
 ## Performance
 
-This package is capable of calculating abnormal returns very quickly. On a Ryzen 5 3600, it can calculate 1 million different regressions on different slices of data in under 3 seconds. In a larger benchmark using simulated data for 1 million firm-events, this package can calculate abnormal returns for all events using two methods (so 2 million total regressions, 2 million estimations and some other statistics) in 9 seconds. See the benchmark folder for more details.
+This package is capable of calculating abnormal returns very quickly. On a Ryzen 7 5700X, it can calculate 1 million different regressions on different slices of data in under 0.5 seconds. In a larger benchmark using simulated data for 1 million firm-events, this package can calculate abnormal returns for all events using two methods (so 2 million total regressions, 2 million estimations and some other statistics) in 1.5 seconds. See the benchmark folder for more details.
 
 ## Acknowledgements
 

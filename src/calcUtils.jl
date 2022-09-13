@@ -90,10 +90,19 @@ function Base.:(*)(x::Adjoint{T, <:FixedTable{N, T}}, y::AbstractVector{T}) wher
     SVector(out)
 end
 
-function resp_matrix(data::FixedTable{N, T, AV}) where {N, T, AV}
+function pred_matrix(data::FixedTable{N, T, AV}) where {N, T, AV}
     #@assert N >= 2 "Not enough columns"
     FixedTable(
         SVector{N-1, AV}(data[:, i] for i in 2:N),
         SVector{N-1}(names(data)[i] for i in 2:N)
     )
+end
+
+adjust_minobs(x::Integer, ::FixedTable) = x
+function adjust_minobs(x::Real, data::FixedTable)
+    if x < 1
+        data.req_length * x
+    else
+        x
+    end
 end

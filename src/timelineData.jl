@@ -15,20 +15,23 @@ mkt_data = MarketData(
 """
 
 """
-    struct DataVector <: CalendarData
-        data::Vector{Float64}
-        missing_bdays::SparseVector{Bool, Int}
-        dates::ClosedInterval{Date}
-        calendar::MarketCalendar
-        function DataVector(data, missing_bdays, dates, calendar)
-            @assert length(data) == length(missing_bdays) == bdayscount(calendar, dates.left, dates.right) + 1 "Data does not match length of dates or missings"
-            new(data, missing_bdays, dates, calendar)
+    struct DataVector
+        data::OffsetVector{Float64, Vector{Float64}}
+        missing_bdays::Union{Nothing, OffsetVector{Bool, SparseVector{Bool, Int}}}
+        interval::UnitRange{Int}
+        function DataVector(data, missing_bdays, interval)
+            if missing_bdays !== nothing
+                @assert length(data) == length(missing_bdays) "Data does not match length of dates or missings"
+                @assert data.offsets == missing_bdays.offsets
+            end
+            @assert length(interval) == length(data)
+            new(data, missing_bdays, interval)
         end
     end
 
-    DataVector(data::AbstractVector, dates::ClosedInterval{Date}, cal::MarketCalendar)
+    DataVector(data::AbstractVector{T}, offset::Int) where {T}
 
-    DataVector(data::AbstractVector, dates::AbstractVector{Date}, cal::MarketCalendar)
+    DataVector(data::AbstractVector, d::Date, hc::MarketCalendar)
 """
 struct DataVector
     data::OffsetVector{Float64, Vector{Float64}}
@@ -53,37 +56,27 @@ end
 struct AllowMissing{mssng} end
 
 """
-    mutable struct TimelineTable{Mssng, T, MNames, FNames, N1, N2} <: Tables.AbstractColumns
-        parent::MarketData{T, MNames, FNames, N1, N2}
-        "The current ID"
-        id::T
-        "Whether the functions return Vector{Union{Missing, Float64}} or Vector{Float64}"
-        allow_missing::Type{AllowMissing{Mssng}}
-        "Actual returnable dates that guarentees a square matrix made of the minimum and maximum of the DataVectors for this ID and set of columns"
-        dates::ClosedInterval{Date}
-        "Index of column names and any lags/leads"
-        cols::DictIndex
-        "missing days between the dates"
-        missing_bdays::SparseVector{Bool, Int}
-        "dates requested, which provides what data is automatically returned by functions"
-        req_dates::ClosedInterval{Date}
+    struct FixedTable{N, T<:AbstractFloat, AV <: AbstractVector{T}, CL<:Union{Symbol, String}} <: AbstractMatrix{T}
+        data::SVector{N, AV}
+        cols::SVector{N, CL}
+        req_length::Int
+        function FixedTable(xs::SVector{N, AV}, cols::SVector{N, CL}, req_length=0) where {T, N, AV<:AbstractVector{T}, CL}
+            new{N, T, AV, CL}(xs, cols, req_length)
+        end
     end
 
 
-This type provides [Tables.jl](https://github.com/JuliaData/Tables.jl) access to
-`DataVector`s.
-
-Functions to update some values are:
-- `AbnormalReturns.update_id!`: changes the `id` (which updates `dates` and `missing_bdays`)
-- `select!`: changes the `cols` (also updates `dates` and `missing_bdays` if `cols` is different)
-- `AbnormalReturns.update_dates!`: changes `req_dates` (does not update anything else)
+This provides a fixed-width interface that is designed to allow quick access
+(either through accessing a column number `data[:, 1]` or accessing a column
+name `data[:, :a]`). `req_length` is an optional parameter that specifies the
+length that a user originally requested, which is used in later functions
+to determine if the FixedTable has too few rows.
 """
 struct FixedTable{N, T<:AbstractFloat, AV <: AbstractVector{T}, CL<:Union{Symbol, String}} <: AbstractMatrix{T}
     data::SVector{N, AV}
     cols::SVector{N, CL}
     req_length::Int
     function FixedTable(xs::SVector{N, AV}, cols::SVector{N, CL}, req_length=0) where {T, N, AV<:AbstractVector{T}, CL}
-        #@assert all_equal_length(xs) "Not all the same length"
         new{N, T, AV, CL}(xs, cols, req_length)
     end
 end
@@ -126,6 +119,7 @@ end
         date_col_market=:date,
         date_col_firms=:date,
         id_col=:permno,
+        add_intercept_col=true,
         valuecols_market=nothing,
         valuecols_firms=nothing
     )
@@ -143,6 +137,8 @@ end
     dataset. Otherwise a vector of Symbol or String specifying column names.
 - `valuecols_firms=nothing`: Same as above
 - `id_col=:permno`: The column corresponding to the set of firm IDs in `df_firms`
+- `add_intercept_col=true`: Whether to add a column to the data for an intercept (which is
+    always equal to 1)
 
 MarketData is the main data storage structure. Data is stored for each firm in
 a Dict, where the data itself is a NamedTuple (names corresponding to column names,
@@ -178,6 +174,9 @@ function MarketData(
     df_firms = DataFrame(df_firms)
     if add_intercept_col
         df_market[!, :intercept] .= 1.0
+        if valuecols_market !== nothing && :intercept ∉ valuecols_market
+            push!(valuecols_market, :intercept)
+        end
     end
     if valuecols_market === nothing
         valuecols_market = Symbol.([n for n in Symbol.(names(df_market)) if n ∉ [date_col_market]])
@@ -548,7 +547,7 @@ function Base.getindex(
     data::MarketData{T},
     id::T,
     dates::ClosedInterval{Date},
-    cols::SVector{N, Symbol};
+    cols::SVector{N};
 ) where {T, N}
     r1 = date_range(calendar(data), dates)
     r = maximin(r1, interval.(Ref(data), id, cols)...)

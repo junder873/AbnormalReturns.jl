@@ -52,9 +52,7 @@ var_diff(x, y) = var(x) + var(y) - 2 * cov(x, y)
 # for firm data
 """
 
-Calculates the buy and hold returns (also called geometric return) for TimelineData. If an Integer
-is passed, then it is calculated based on the FIRM_DATA_CACHE (for the integer provided), otherwise
-is calculated for the MARKET_DATA_CACHE.
+Calculates the buy and hold returns (also called geometric return).
 
 These functions treat missing returns in the period implicitly as a zero return.
 """
@@ -118,7 +116,7 @@ function pred_diff(
     if size(data, 1) < adjust_minobs(minobs, data)
         return missing
     else
-        fun(data[:, 1], resp_matrix(data), coef(rr))
+        fun(data[:, 1], pred_matrix(data), coef(rr))
     end
 end
 
@@ -175,22 +173,18 @@ end
 
 """
     bhar(
-        data::TimelineTable{Mssng, T, MNames, FNames},
-        firm_col=FNames[1],
-        mkt_col=MNames[1];
+        data::FixedTable{T, 2};
         minobs=0.8
-    ) where {Mssng, T, MNames, FNames}
+    ) where {T}
 
     bhar(
-        data::TimelineTable,
+        data::FixedTable,
         rr::RegressionModel;
         minobs=0.8
     )
 
     bhar(
-        data::IterateFixedTable{T, MNames, FNames},
-        firm_col=FNames[1],
-        mkt_col=MNames[1];
+        data::IterateFixedTable{T, 2};
         minobs=0.8
     ) where {T, MNames, FNames}
 
@@ -202,8 +196,9 @@ end
 
 Calculates the difference between buy and hold returns (also referred to as geometric returns) for a firm and a benchmark.
 If a regression is passed, then the benchmark is based on the coefficients from that regression and the performance of the benchmarks
-in the regression. These are sometimes called Fama-French abnormal returns. Simple abnormal returns use a market index as the benchmark
-(such as the S&P 500 or a value weighted return of all firms).
+in the regression. These are sometimes called Fama-French abnormal returns. If no regression is passed,
+abnormal returns are calculated as the difference between the first and second columns in
+the FixedTable (second column is typically the benchmark such as the S&P 500 or a value weighted return of all firms).
 
 Similar to constructing the regression, passing an `IterateFixedTable` will return a Vector and uses a more optimized method.
 """
@@ -212,22 +207,18 @@ bhar(data::Union{IterateFixedTable, FixedTable, Tuple}, rr; minobs=0.8) = pred_d
 
 """
     car(
-        data::TimelineTable{Mssng, T, MNames, FNames},
-        firm_col=FNames[1],
-        mkt_col=MNames[1];
+        data::FixedTable{T, 2};
         minobs=0.8
-    ) where {Mssng, T, MNames, FNames}
+    ) where {T}
 
     car(
-        data::TimelineTable,
+        data::FixedTable,
         rr::RegressionModel;
         minobs=0.8
     )
 
     car(
-        data::IterateFixedTable{T, MNames, FNames},
-        firm_col=FNames[1],
-        mkt_col=MNames[1];
+        data::IterateFixedTable{T, 2};
         minobs=0.8
     ) where {T, MNames, FNames}
 
@@ -239,8 +230,9 @@ bhar(data::Union{IterateFixedTable, FixedTable, Tuple}, rr; minobs=0.8) = pred_d
 
 Calculates the cumulative returns of a firm over a benchmark (through addition of each return).
 If a regression is passed, then the benchmark is based on the coefficients from that regression and the performance of the benchmarks
-in the regression. These are sometimes called Fama-French abnormal returns. Simple abnormal returns use a market index as the benchmark
-(such as the S&P 500 or a value weighted return of all firms).
+in the regression. These are sometimes called Fama-French abnormal returns. If no regression is passed,
+abnormal returns are calculated as the difference between the first and second columns in
+the FixedTable (second column is typically the benchmark such as the S&P 500 or a value weighted return of all firms).
 
 Similar to constructing the regression, passing an `IterateFixedTable` will return a Vector and uses a more optimized method.
 """
@@ -266,7 +258,7 @@ function get_coefficient_val(rr::RegressionModel, coefname::String...)
 end
 
 # as an optimization, if all are the same regression, then just find the coefname once
-function get_coefficient_val(rrs::Vector{BasicReg{L, R, N}}, coefname::String...) where {L, R, N}
+function get_coefficient_val(rrs::Vector{<:RegressionModel}, coefname::String...)
     out = Vector{Union{Missing, Float64}}(missing, length(rrs))
     pos = 0
     for (i, rr) in enumerate(rrs)
@@ -289,7 +281,7 @@ This function finds the position of the coefficient name provided, defaults to "
 If the coefname is not in the regression, then this function returns an error.
 """
 alpha(rr::RegressionModel, coefname::String...="(Intercept)") = get_coefficient_val(rr, coefname...)
-alpha(rrs::Vector{BasicReg{L, R, N}}, coefname::String...="(Intercept)") where {L, R, N} = get_coefficient_val(rrs, coefname...)
+alpha(rrs::Vector{<:RegressionModel}, coefname::String...="(Intercept)") = get_coefficient_val(rrs, coefname...)
 
 
 """
@@ -302,4 +294,4 @@ This function finds the position of the coefficient name provided, defaults to s
 If the coefname is not in the regression, then this function returns an error.
 """
 beta(rr::RegressionModel, coefname::String...=("mkt", "mktrf", "vwretd", "ewretd")...) = get_coefficient_val(rr, coefname...)
-beta(rrs::Vector{BasicReg{L, R, N}}, coefname::String...=("mkt", "mktrf", "vwretd", "ewretd")...) where {L, R, N} = get_coefficient_val(rrs, coefname...)
+beta(rrs::Vector{<:RegressionModel}, coefname::String...=("mkt", "mktrf", "vwretd", "ewretd")...) = get_coefficient_val(rrs, coefname...)

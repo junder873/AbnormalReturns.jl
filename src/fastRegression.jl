@@ -21,20 +21,20 @@ end
 
 """
     function BasicReg(
-        resp::AbstractVector{Float64},
-        pred::AbstractMatrix{Float64},
+        resp::AbstractVector,
+        pred::AbstractMatrix,
         yname::String,
-        xnames::Vector{String},
+        xnames::SVector{N, String},
         f::FormulaTerm{L,R};
         save_residuals::Bool=false,
-        minobs::Int=1
+        minobs=1
     )::BasicReg{L,R} where {L,R}
 
 ## Arguments
 - resp::AbstractVector{Float64}: The "Y" or response in a linear regression
 - pred::AbstractMatrix{Float64}: The "X" matrix in a linear regression
 - yname::String: The name of the response variable
-- xnames::Vector{String}: The names of the prediction variables
+- xnames::SVector{N, String}: The names of the prediction variables
 - f::FormulaTerm{L,R}: A StatsModels.jl formula, saved in the resulting struct
 - save_residuals::Bool=false: Whether or not to save the vector of residuals from
     the regression. Note for large numbers of regressions this can significantly slow
@@ -64,7 +64,7 @@ function BasicReg(
     BasicReg(
         length(resp),
         f,
-        coef,
+        SVector{N}(coef),
         xnames,
         yname,
         calc_tss(resp),
@@ -78,7 +78,7 @@ function BasicReg(
     f::FormulaTerm;
     vargs...
 ) where {N}
-    resp = resp_matrix(tab)
+    resp = pred_matrix(tab)
     BasicReg(tab[:, 1], resp, tab.cols[1], resp.cols, f; vargs...)
 end
 
@@ -88,14 +88,14 @@ function BasicReg(
     args...;
     vargs...
 ) where {N}
-    BasicReg(tab[:, 1], resp_matrix(tab), args...; vargs...)
+    BasicReg(tab[:, 1], pred_matrix(tab), args...; vargs...)
 end
 
 
 
 """
     quick_reg(
-        data::TimelineTable{false},
+        data::FixedTable,
         f::FormulaTerm;
         minobs::Real=0.8,
         save_residuals::Bool=false
@@ -111,8 +111,8 @@ end
 Calculates a linear regression for the supplied data based on the formula (formula from StatsModels.jl).
 Unless the formula explicitly excludes the intercept (i.e., `@formula(y ~ 0 + x)`), an intercept is added.
 
-If `data` is of the type `IterateFixedTable`, then the formula is applied to each `TimelineTable` in an
-optimized way and returns a `Vector{BasicReg}`.
+If `data` is of the type `IterateFixedTable`, then the function uses the maximum number of threads
+on each `FixedTable` in an optimized way and returns a `Vector{BasicReg}`.
 
 ## Arguments
 - `minobs::Real`: The minimum number of observations to return a completed regression. If less than 1,

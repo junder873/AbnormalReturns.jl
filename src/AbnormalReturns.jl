@@ -47,7 +47,6 @@ export lag, lead
 
 include("marketCalendar.jl")
 include("timelineData.jl")
-include("utils.jl")
 include("calcUtils.jl")
 include("iterateTimelineTable.jl")
 include("fastRegression.jl")

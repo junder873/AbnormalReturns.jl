@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Example · AbnormalReturns.jl</title><script data-outdated-warner src="../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.039/juliamono-regular.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.13.11/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL=".."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../assets/documenter.js"></script><script src="../siteinfo.js"></script><script src="../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../">AbnormalReturns.jl</a></span></div><form class="docs-search" action="../search/"><input class="docs-search-query" id="documenter-search-query" name="q" type="text" placeholder="Search docs"/></form><ul class="docs-menu"><li><a class="tocitem" href="../">Introduction</a></li><li class="is-active"><a class="tocitem" href>Example</a><ul class="internal"><li><a class="tocitem" href="#Data"><span>Data</span></a></li><li><a class="tocitem" href="#Arranging-and-Accessing-the-Data"><span>Arranging and Accessing the Data</span></a></li><li><a class="tocitem" href="#Estimating-Regressions"><span>Estimating Regressions</span></a></li><li><a class="tocitem" href="#More-Data-Using-DataFramesMeta"><span>More Data Using DataFramesMeta</span></a></li><li><a class="tocitem" href="#Vectorizing-the-Data"><span>Vectorizing the Data</span></a></li><li><a class="tocitem" href="#Lag-and-Lead-Operators"><span>Lag and Lead Operators</span></a></li></ul></li><li><a class="tocitem" href="../api/">API</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><nav class="breadcrumb"><ul class="is-hidden-mobile"><li class="is-active"><a href>Example</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Example</a></li></ul></nav><div class="docs-right"><a class="docs-edit-link" href="https://github.com/junder873/AbnormalReturns.jl/blob/master/docs/src/example.md" title="Edit on GitHub"><span class="docs-icon fab"></span><span class="docs-label is-hidden-touch">Edit on GitHub</span></a><a class="docs-settings-button fas fa-cog" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-sidebar-button fa fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a></div></header><article class="content" id="documenter-page"><h1 id="Example"><a class="docs-heading-anchor" href="#Example">AbnormalReturns Example</a><a id="Example-1"></a><a class="docs-heading-anchor-permalink" href="#Example" title="Permalink"></a></h1><p>As a quick example:</p><pre><code class="language-julia hljs">using CSV, DataFramesMeta, Dates, AbnormalReturns
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Example · AbnormalReturns.jl</title><script data-outdated-warner src="../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.045/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.13.24/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL=".."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../assets/documenter.js"></script><script src="../siteinfo.js"></script><script src="../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../">AbnormalReturns.jl</a></span></div><form class="docs-search" action="../search/"><input class="docs-search-query" id="documenter-search-query" name="q" type="text" placeholder="Search docs"/></form><ul class="docs-menu"><li><a class="tocitem" href="../">Introduction</a></li><li class="is-active"><a class="tocitem" href>Example</a><ul class="internal"><li><a class="tocitem" href="#Data"><span>Data</span></a></li><li><a class="tocitem" href="#Arranging-and-Accessing-the-Data"><span>Arranging and Accessing the Data</span></a></li><li><a class="tocitem" href="#Estimating-Regressions"><span>Estimating Regressions</span></a></li><li><a class="tocitem" href="#More-Data-Using-DataFramesMeta"><span>More Data Using DataFramesMeta</span></a></li><li><a class="tocitem" href="#Vectorizing-the-Data"><span>Vectorizing the Data</span></a></li></ul></li><li><a class="tocitem" href="../api/">API</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><nav class="breadcrumb"><ul class="is-hidden-mobile"><li class="is-active"><a href>Example</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Example</a></li></ul></nav><div class="docs-right"><a class="docs-edit-link" href="https://github.com/junder873/AbnormalReturns.jl/blob/main/docs/src/example.md" title="Edit on GitHub"><span class="docs-icon fab"></span><span class="docs-label is-hidden-touch">Edit on GitHub</span></a><a class="docs-settings-button fas fa-cog" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-sidebar-button fa fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a></div></header><article class="content" id="documenter-page"><h1 id="Example"><a class="docs-heading-anchor" href="#Example">AbnormalReturns Example</a><a id="Example-1"></a><a class="docs-heading-anchor-permalink" href="#Example" title="Permalink"></a></h1><p>As a quick example:</p><pre><code class="language-julia hljs">using CSV, DataFramesMeta, Dates, AbnormalReturns
 
 df_firm = CSV.File(joinpath(data_dir, &quot;daily_ret.csv&quot;)) |&gt; DataFrame
 df_mkt = CSV.File(joinpath(data_dir, &quot;mkt_ret.csv&quot;)) |&gt; DataFrame
@@ -19,40 +19,41 @@ df_events = @chain df_events begin
     @transform(:reg = quick_reg(mkt_data[:permno, :est_start .. :est_end], @formula(ret ~ mkt + smb + hml)))
     @transform(
         :bhar_reg = bhar(mkt_data[:permno, :event_start .. :event_end], :reg),
-        :bhar_simple = bhar(mkt_data[:permno, :event_start .. :event_end], &quot;ret&quot;, &quot;mkt&quot;),
+        :bhar_simple = bhar(mkt_data[:permno, :event_start .. :event_end, [&quot;ret&quot;, &quot;mkt&quot;]]),
         :car_reg = car(mkt_data[:permno, :event_start .. :event_end], :reg),
-        :car_simple = car(mkt_data[:permno, :event_start .. :event_end], &quot;ret&quot;, &quot;mkt&quot;),
+        :car_simple = car(mkt_data[:permno, :event_start .. :event_end, [&quot;ret&quot;, &quot;mkt&quot;]]),
+        :total_ret = bh_return(mkt_data[:permno, :event_start .. :event_end, [&quot;ret&quot;]]),
+        :total_mkt_ret = bh_return(mkt_data[:permno, :event_start .. :event_end, [&quot;mkt&quot;]]),
     )
     @rtransform(
         :std = std(:reg),
         :var = var(:reg),
-        :total_ret = bh_return(mkt_data[:permno, :event_start .. :event_end], &quot;ret&quot;),
-        :total_mkt_ret = bh_return(mkt_data[:permno, :event_start .. :event_end], &quot;mkt&quot;),
+
     )
     select(Not([:est_start, :est_end, :event_start, :event_end, :reg]))
     # columns eliminated to save space:
     select(Not([:car_reg, :car_simple, :var, :total_mkt_ret]))
 end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">283×6 DataFrame
- Row │ permno  ea          bhar_reg     bhar_simple  std         total_ret
-     │ Int64   Date        Float64?     Float64      Float64?    Float64
+ Row │ permno  ea          bhar_reg     bhar_simple  total_ret     std
+     │ Int64   Date        Float64?     Float64      Float64       Float64?
 ─────┼────────────────────────────────────────────────────────────────────────
-   1 │  49373  2020-03-05  -0.0114753   -0.0368966   0.0120205   -0.0494716
-   2 │  23660  2020-03-19  -0.0761877   -0.0799651   0.0100327   -0.16273
-   3 │  17144  2020-03-18   0.00584866  -0.00749583  0.0122784    0.00562007
-   4 │  52708  2020-03-19   0.0449673    0.057314    0.023234    -0.0254504
-   5 │  57665  2020-03-24   0.105811     0.0931054   0.0105352    0.171386
-   6 │  61621  2020-03-25   0.125142     0.129935    0.0132682    0.303036
-   7 │  10104  2020-03-12   0.0295405    0.0515017   0.00903142  -0.01338
-   8 │  75154  2020-03-19   0.15375      0.0269029   0.0312084   -0.0558615
-  ⋮  │   ⋮         ⋮            ⋮            ⋮           ⋮            ⋮
- 277 │  90373  2020-10-29  -0.00714584  -0.00486512  0.016151    -0.0422143
- 278 │  90386  2020-11-02  -0.120063    -0.0769287   0.0256068   -0.0606557
- 279 │  90993  2020-10-29  -0.00087777   0.00495886  0.0109232   -0.0323903
- 280 │  90880  2020-10-28   0.00943539  -0.00174027  0.0109558   -0.0271723
- 281 │  91668  2020-10-30   0.0290468    0.0200758   0.017888     0.0283726
- 282 │  12449  2020-11-05  -0.0402344   -0.0572696   0.0183221   -0.0128859
- 283 │  61399  2020-11-18  -0.0761987   -0.0706244   0.0134081   -0.0759727
-                                                              268 rows omitted</code></pre><h2 id="Data"><a class="docs-heading-anchor" href="#Data">Data</a><a id="Data-1"></a><a class="docs-heading-anchor-permalink" href="#Data" title="Permalink"></a></h2><p>For the basic data, this uses the files in the test folder of this package (&quot;test\data&quot;). The &quot;daily_ret.csv&quot; file is a selection of firm returns, while &quot;mkt_ret.csv&quot; includes the average market return along with some Fama-French factor returns, you can download similar Fama-French data from <a href="https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/data_library.html">here</a> and stock market data from <a href="https://github.com/ellisvalentiner/AlphaVantage.jl">AlphaVantage.jl</a> or <a href="https://github.com/junder873/WRDSMerger.jl">WRDSMerger.jl</a> (requires access to the WRDS database).</p><p>The firm data uses &quot;Permno&quot; to identify a stock. This package will work with other identifiers, as long as the identifier-date pair is unique.</p><p>Load the firm data:</p><pre><code class="language-julia hljs">df_firm = CSV.File(joinpath(data_dir, &quot;daily_ret.csv&quot;)) |&gt; DataFrame</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">48659×4 DataFrame
+   1 │  49373  2020-03-05  -0.0114753   -0.0368966   -0.0494716    0.0120205
+   2 │  23660  2020-03-19  -0.0761877   -0.0799651   -0.16273      0.0100327
+   3 │  17144  2020-03-18   0.00584866  -0.00749583   0.00562007   0.0122784
+   4 │  52708  2020-03-19   0.0449673    0.057314    -0.0254504    0.023234
+   5 │  57665  2020-03-24   0.105811     0.0931054    0.171386     0.0105352
+   6 │  61621  2020-03-25   0.125142     0.129935     0.303036     0.0132682
+   7 │  10104  2020-03-12   0.0295405    0.0515017   -0.01338      0.00903142
+   8 │  75154  2020-03-19   0.15375      0.0269029   -0.0558615    0.0312084
+  ⋮  │   ⋮         ⋮            ⋮            ⋮            ⋮            ⋮
+ 277 │  90373  2020-10-29  -0.00714584  -0.00486512  -0.0422143    0.016151
+ 278 │  90386  2020-11-02  -0.120063    -0.0769287   -0.0606557    0.0256068
+ 279 │  90993  2020-10-29  -0.00087777   0.00495886  -0.0323903    0.0109232
+ 280 │  90880  2020-10-28   0.00943539  -0.00174027  -0.0271723    0.0109558
+ 281 │  91668  2020-10-30   0.0290468    0.0200758    0.0283726    0.017888
+ 282 │  12449  2020-11-05  -0.0402344   -0.0572696   -0.0128859    0.0183221
+ 283 │  61399  2020-11-18  -0.0761987   -0.0706244   -0.0759727    0.0134081
+                                                              268 rows omitted</code></pre><h2 id="Data"><a class="docs-heading-anchor" href="#Data">Data</a><a id="Data-1"></a><a class="docs-heading-anchor-permalink" href="#Data" title="Permalink"></a></h2><p>For the basic data, this uses the files in the test folder of this package (&quot;test\data&quot;). The &quot;daily_ret.csv&quot; file is a selection of firm returns, while &quot;mkt_ret.csv&quot; includes the average market return along with some Fama-French factor returns, you can download similar Fama-French data from <a href="https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/data_library.html">here</a> or from <a href="https://github.com/tbeason/FamaFrenchData.jl">FamaFrenchData.jl</a> and stock market data from <a href="https://github.com/ellisvalentiner/AlphaVantage.jl">AlphaVantage.jl</a> or <a href="https://github.com/junder873/WRDSMerger.jl">WRDSMerger.jl</a> (requires access to the WRDS database).</p><p>The firm data uses &quot;Permno&quot; to identify a stock. This package will work with other identifiers, as long as the identifier-date pair is unique. However, Integers and Symbols will often be fastest (as opposed to String identifiers).</p><p>Load the firm data:</p><pre><code class="language-julia hljs">df_firm = CSV.File(joinpath(data_dir, &quot;daily_ret.csv&quot;)) |&gt; DataFrame</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">48659×4 DataFrame
    Row │ permno  date        ret           vol
        │ Int64   Date        Float64?      Float64
 ───────┼──────────────────────────────────────────────────
@@ -72,129 +73,122 @@ end</code></pre><pre class="documenter-example-output"><code class="nohighlight 
  48657 │  91668  2020-12-29  -0.0155966    140853.0
  48658 │  91668  2020-12-30   0.0124131    119724.0
  48659 │  91668  2020-12-31  -0.00222926   196481.0
-                                        48644 rows omitted</code></pre><p>and the market data:</p><pre><code class="language-julia hljs">df_mkt = CSV.File(joinpath(data_dir, &quot;mkt_ret.csv&quot;)) |&gt; DataFrame
-df_mkt[!, :mkt] = df_mkt.mktrf .+ df_mkt.rf</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">672×7 DataFrame
- Row │ date        mktrf    smb      hml      rf       umd      mkt
-     │ Date        Float64  Float64  Float64  Float64  Float64  Float64
-─────┼──────────────────────────────────────────────────────────────────
-   1 │ 2019-01-02   0.0023   0.006    0.0113   0.0001  -0.023    0.0024
-   2 │ 2019-01-03  -0.0245   0.0036   0.012    0.0001  -0.0078  -0.0244
-   3 │ 2019-01-04   0.0355   0.0041  -0.007    0.0001  -0.0097   0.0356
-   4 │ 2019-01-07   0.0094   0.0101  -0.0074   0.0001  -0.0077   0.0095
-   5 │ 2019-01-08   0.0101   0.0054  -0.0063   0.0001   0.0011   0.0102
-   6 │ 2019-01-09   0.0056   0.0046   0.001    0.0001  -0.0083   0.0057
-   7 │ 2019-01-10   0.0042   0.0003  -0.0046   0.0001  -0.0037   0.0043
-   8 │ 2019-01-11  -0.0001   0.0012   0.0022   0.0001  -0.002    0.0
-  ⋮  │     ⋮          ⋮        ⋮        ⋮        ⋮        ⋮        ⋮
- 666 │ 2021-08-23   0.0108   0.0092  -0.0083   0.0      0.0076   0.0108
- 667 │ 2021-08-24   0.0041   0.0034   0.0038   0.0      0.0094   0.0041
- 668 │ 2021-08-25   0.0026  -0.0004   0.0034   0.0      0.0072   0.0026
- 669 │ 2021-08-26  -0.0066  -0.004   -0.0031   0.0     -0.0031  -0.0066
- 670 │ 2021-08-27   0.0108   0.0162   0.003    0.0      0.0094   0.0108
- 671 │ 2021-08-30   0.0035  -0.0035  -0.0138   0.0     -0.0117   0.0035
- 672 │ 2021-08-31  -0.0013   0.0043  -0.0005   0.0     -0.002   -0.0013
-                                                        657 rows omitted</code></pre><h2 id="Arranging-and-Accessing-the-Data"><a class="docs-heading-anchor" href="#Arranging-and-Accessing-the-Data">Arranging and Accessing the Data</a><a id="Arranging-and-Accessing-the-Data-1"></a><a class="docs-heading-anchor-permalink" href="#Arranging-and-Accessing-the-Data" title="Permalink"></a></h2><p>Next, load the data into a <code>MarketData</code> object:</p><pre><code class="language-julia hljs">mkt_data = MarketData(
+                                        48644 rows omitted</code></pre><p>and the market data:</p><pre><code class="language-julia hljs">df_mkt = CSV.File(joinpath(data_dir, &quot;mkt_ret.csv&quot;)) |&gt; DataFrame</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">672×6 DataFrame
+ Row │ date        mktrf    smb      hml      rf       umd
+     │ Date        Float64  Float64  Float64  Float64  Float64
+─────┼─────────────────────────────────────────────────────────
+   1 │ 2019-01-02   0.0023   0.006    0.0113   0.0001  -0.023
+   2 │ 2019-01-03  -0.0245   0.0036   0.012    0.0001  -0.0078
+   3 │ 2019-01-04   0.0355   0.0041  -0.007    0.0001  -0.0097
+   4 │ 2019-01-07   0.0094   0.0101  -0.0074   0.0001  -0.0077
+   5 │ 2019-01-08   0.0101   0.0054  -0.0063   0.0001   0.0011
+   6 │ 2019-01-09   0.0056   0.0046   0.001    0.0001  -0.0083
+   7 │ 2019-01-10   0.0042   0.0003  -0.0046   0.0001  -0.0037
+   8 │ 2019-01-11  -0.0001   0.0012   0.0022   0.0001  -0.002
+  ⋮  │     ⋮          ⋮        ⋮        ⋮        ⋮        ⋮
+ 666 │ 2021-08-23   0.0108   0.0092  -0.0083   0.0      0.0076
+ 667 │ 2021-08-24   0.0041   0.0034   0.0038   0.0      0.0094
+ 668 │ 2021-08-25   0.0026  -0.0004   0.0034   0.0      0.0072
+ 669 │ 2021-08-26  -0.0066  -0.004   -0.0031   0.0     -0.0031
+ 670 │ 2021-08-27   0.0108   0.0162   0.003    0.0      0.0094
+ 671 │ 2021-08-30   0.0035  -0.0035  -0.0138   0.0     -0.0117
+ 672 │ 2021-08-31  -0.0013   0.0043  -0.0005   0.0     -0.002
+                                               657 rows omitted</code></pre><h2 id="Arranging-and-Accessing-the-Data"><a class="docs-heading-anchor" href="#Arranging-and-Accessing-the-Data">Arranging and Accessing the Data</a><a id="Arranging-and-Accessing-the-Data-1"></a><a class="docs-heading-anchor-permalink" href="#Arranging-and-Accessing-the-Data" title="Permalink"></a></h2><p>Next, load the data into a <code>MarketData</code> object:</p><pre><code class="language-julia hljs">mkt_data = MarketData(
     df_mkt,
     df_firm;
     id_col=:permno,# default
     date_col_firms=:date,# default
     date_col_market=:date,# default
+    add_intercept_col=true,# default
     valuecols_firms=[:ret],# defaults to nothing, in which case
     # all columns other than id and date are used
-    valuecols_market=[:mkt, :smb, :hml, :umd]# defaults to
+    valuecols_market=[:mktrf, :rf, :smb, :hml, :umd]# defaults to
     # nothing, in which case all columns other than date are used
 )</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">MarketData with ID type Int64 with 99 unique firms
 MarketCalendar: 2019-01-02 .. 2021-08-31 with 672 business days
-Market Columns: mkt, smb, hml, umd
-Firm Columns: ret</code></pre><div class="admonition is-info"><header class="admonition-header">Note</header><div class="admonition-body"><p>For performance, especially when loading large datasets of firm data, it is best to make sure the firm dataframe is presorted by ID then Date.</p></div></div><p>This object rearranges the data so it can be quickly accessed later. The <code>mkt_data</code> now contains 3 things:</p><ol><li>A <a href="https://github.com/JuliaFinance/BusinessDays.jl">BusinessDays.jl</a> calendar that exactly matches the days loaded in the market data.</li><li>Each column of the <code>df_mkt</code> stored</li><li>Each column of the <code>df_firm</code> stored in a <code>Dict</code> for each firm.</li></ol><p>Data is accessed on a by firm basis. For example, the &quot;Permno&quot; for Oracle (ORCL) is 10104:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; orcl_data = mkt_data[10104]</code><code class="nohighlight hljs ansi" style="display:block;">TimelineTable for 10104 and available columns mkt,smb,hml,umd,ret
-Maximum dates given current column selection: 2019-01-02..2020-12-31
-Currently selected dates: 2019-01-02..2020-12-31
-============= ============== ========= ========= ========= ==========
-        Date            ret       mkt       smb       hml       umd
-============= ============== ========= ========= ========= ==========
-  2019-01-02     0.00155038    0.0024     0.006    0.0113    -0.023
-  2019-01-03    -0.00973026   -0.0244    0.0036     0.012   -0.0078
-  2019-01-04      0.0430996    0.0356    0.0041    -0.007   -0.0097
-  2019-01-07      0.0158425    0.0095    0.0101   -0.0074   -0.0077
-  2019-01-08     0.00906218    0.0102    0.0054   -0.0063    0.0011
-  2019-01-09     -0.0020886    0.0057    0.0046     0.001   -0.0083
-  2019-01-10     0.00083719    0.0043    0.0003   -0.0046   -0.0037
-  2019-01-11     0.00982855       0.0    0.0012    0.0022    -0.002
-  2019-01-14    -0.00227792   -0.0059    -0.006    0.0094   -0.0059
-  2019-01-15     0.00809466    0.0107       0.0   -0.0088    0.0114
-  2019-01-16     -0.0066143    0.0029    0.0003    0.0092   -0.0076
-  2019-01-17      0.0108198    0.0076    0.0011   -0.0024    -0.002
-  2019-01-18      0.0142033     0.013   -0.0037    0.0011   -0.0085
-  2019-01-22    -0.00669782   -0.0152   -0.0041    0.0032    0.0094
-  2019-01-23     0.00613002    0.0016   -0.0039   -0.0014    0.0099
-  2019-01-24   -0.000812366    0.0024    0.0044       0.0   -0.0102
-      ⋮             ⋮            ⋮         ⋮         ⋮         ⋮
-============= ============== ========= ========= ========= ==========
-                                                     489 rows omitted</code></pre><p>You can also request a specific range of dates and columns using <a href="https://github.com/ChrisRackauckas/EllipsisNotation.jl">EllipsisNotation.jl</a>:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; orcl_data = mkt_data[10104, Date(2020) .. Date(2020, 6, 30), [:ret, :mkt, lag(:mkt)]]</code><code class="nohighlight hljs ansi" style="display:block;">TimelineTable for 10104 and available columns mkt,smb,hml,umd,ret
-Maximum dates given current column selection: 2019-01-03..2020-12-31
-Currently selected dates: 2020-01-01..2020-06-30
-============= ============= ========== ===========
-        Date           ret        mkt   lag(mkt)
-============= ============= ========== ===========
-  2020-01-02     0.0183088    0.00866    0.00287
-  2020-01-03   -0.00352182   -0.00664    0.00866
-  2020-01-06    0.00520838    0.00366   -0.00664
-  2020-01-07    0.00222056   -0.00184    0.00366
-  2020-01-08    0.00387742    0.00476   -0.00184
-  2020-01-09    0.00461851    0.00656    0.00476
-  2020-01-10    0.00128723   -0.00334    0.00656
-  2020-01-13    0.00238753    0.00736   -0.00334
-  2020-01-14     0.0054965   -0.00054    0.00736
-  2020-01-15   -0.00218664    0.00166   -0.00054
-  2020-01-16     0.0122352    0.00886    0.00166
-  2020-01-17   -0.00541222    0.00286    0.00886
-  2020-01-21    0.00163251   -0.00314    0.00286
-  2020-01-22   -0.00905469    0.00086   -0.00314
-  2020-01-23    0.00475143    0.00086    0.00086
-  2020-01-24    -0.0165515   -0.00964    0.00086
-      ⋮             ⋮           ⋮          ⋮
-============= ============= ========== ===========
-                                  109 rows omitted</code></pre><p>The dates requested only matter for what is output, internally all data is still stored. In this way, the parameters are largely a &quot;view&quot; into the <code>mkt_data</code> object, allowing for quick updating. For example, changing the dates is just:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; AbnormalReturns.update_dates!(orcl_data, Date(2020, 7, 1) .. Date(2020, 7, 5))</code><code class="nohighlight hljs ansi" style="display:block;">TimelineTable for 10104 and available columns mkt,smb,hml,umd,ret
-Maximum dates given current column selection: 2019-01-03..2020-12-31
-Currently selected dates: 2020-07-01..2020-07-05
-============= ============ ======== ===========
-        Date          ret      mkt   lag(mkt)
-============= ============ ======== ===========
-  2020-07-01   0.00398048   0.0041     0.0158
-  2020-07-02   0.00810951    0.005     0.0041
-============= ============ ======== ===========</code></pre><p>There are similar functions for <code>update_id!</code> (changing the firm ID) and <code>select!</code> (changing the columns).</p><p>Finally, by default, returned data is not missing. This is to make the regressions faster/easier later, since missing data does not work for those. You can change between allowing or not allowing missing data with <code>allowmissing</code> and <code>dropmissing</code>:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; no_missings = mkt_data[18428, Date(2019, 3, 28) .. Date(2019, 4, 5)]</code><code class="nohighlight hljs ansi" style="display:block;">TimelineTable for 18428 and available columns mkt,smb,hml,umd,ret
-Maximum dates given current column selection: 2019-04-03..2020-12-31
-Currently selected dates: 2019-03-28..2019-04-05
-============= ============ ======== ======== ========= ==========
-        Date          ret      mkt      smb       hml       umd
-============= ============ ======== ======== ========= ==========
-  2019-04-03       0.0112   0.0028   0.0022   -0.0039    -0.001
-  2019-04-04    0.0497538    0.002    0.002    0.0093   -0.0132
-  2019-04-05   -0.0413666   0.0053   0.0053   -0.0008   -0.0066
-============= ============ ======== ======== ========= ==========</code></pre><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; with_missings = allowmissing(no_missings)</code><code class="nohighlight hljs ansi" style="display:block;">TimelineTable for 18428 and available columns mkt,smb,hml,umd,ret
-Maximum dates given current column selection: 2019-04-03..2020-12-31
-Currently selected dates: 2019-03-28..2019-04-05
-============= ============ ========= ========= ========= ==========
-        Date          ret       mkt       smb       hml       umd
-============= ============ ========= ========= ========= ==========
-  2019-03-28      missing   missing   missing   missing   missing
-  2019-03-29      missing   missing   missing   missing   missing
-  2019-04-01      missing   missing   missing   missing   missing
-  2019-04-02      missing   missing   missing   missing   missing
-  2019-04-03       0.0112    0.0028    0.0022   -0.0039    -0.001
-  2019-04-04    0.0497538     0.002     0.002    0.0093   -0.0132
-  2019-04-05   -0.0413666    0.0053    0.0053   -0.0008   -0.0066
-============= ============ ========= ========= ========= ==========</code></pre><h2 id="Estimating-Regressions"><a class="docs-heading-anchor" href="#Estimating-Regressions">Estimating Regressions</a><a id="Estimating-Regressions-1"></a><a class="docs-heading-anchor-permalink" href="#Estimating-Regressions" title="Permalink"></a></h2><p>The main goal of this package is quickly running regressions for firm events. The example used here is a firm&#39;s earnings announcement. Starting with one example, Oracle announced its Q3 2020 earnings on 2020-9-10. Calculating abnormal returns typically follows three steps:</p><ol><li>Estimate how the firm typically responds to market factors during a control (or estimation) window</li><li>Use the coefficients from that regression to estimate how the firm should do during the event window</li><li>Subtract the estimated return from the actual firm return during the event window. Depending on how this difference is aggregated, these are typically buy and hold abnormal returns (bhar) or cumulative abnormla returns (CAR)</li></ol><p>First, to create the table for the estimation window, define an estimation window and an event window:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; event_date = Date(&quot;2020-09-10&quot;)</code><code class="nohighlight hljs ansi" style="display:block;">2020-09-10</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; est_start = advancebdays(mkt_data.calendar, event_date, -120)</code><code class="nohighlight hljs ansi" style="display:block;">2020-03-20</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; est_end = advancebdays(mkt_data.calendar, event_date, -2)</code><code class="nohighlight hljs ansi" style="display:block;">2020-09-08</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; event_start = advancebdays(mkt_data.calendar, event_date, -1)</code><code class="nohighlight hljs ansi" style="display:block;">2020-09-09</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; event_end = advancebdays(mkt_data.calendar, event_date, 1)</code><code class="nohighlight hljs ansi" style="display:block;">2020-09-11</code></pre><p>Next, run the estimation regression (the regression automatically selects the correct columns from the data, so it is not necessary to do that beforehand):</p><pre><code class="language-julia hljs">orcl_data = mkt_data[10104, est_start .. est_end]
-rr = quick_reg(orcl_data, @formula(ret ~ mkt + smb + hml))</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Obs: 119, ret ~ -0.0 + 0.77*mkt + -0.302*smb + -0.012*hml, AdjR2: 52.744%</code></pre><p>Then change the table to the event window:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; AbnormalReturns.update_dates!(orcl_data, event_start .. event_end)</code><code class="nohighlight hljs ansi" style="display:block;">TimelineTable for 10104 and available columns mkt,smb,hml,umd,ret
-Maximum dates given current column selection: 2019-01-02..2020-12-31
-Currently selected dates: 2020-09-09..2020-09-11
-============= ============= ========= ========= ==========
-        Date           ret       mkt       smb       hml
-============= ============= ========= ========= ==========
-  2020-09-09      0.029465    0.0207   -0.0017   -0.0199
-  2020-09-10    0.00667254   -0.0164    0.0029   -0.0007
-  2020-09-11   -0.00575618   -0.0006   -0.0083     0.009
-============= ============= ========= ========= ==========</code></pre><p>Now it is easy to run some statistics for the event window:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; bhar(orcl_data, rr) # BHAR based on regression</code><code class="nohighlight hljs ansi" style="display:block;">0.026330396109940146</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; car(orcl_data, rr) # CAR based on regression</code><code class="nohighlight hljs ansi" style="display:block;">0.02612077404623775</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; bhar(orcl_data, &quot;ret&quot;) # BHAR relative to market return</code><code class="nohighlight hljs ansi" style="display:block;">0.027010625593106186</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; bh_return(orcl_data, &quot;ret&quot;) #  Total firm return during event window</code><code class="nohighlight hljs ansi" style="display:block;">0.0303687692811061</code></pre><p>It is also easy to calculate some statistics for the estimation window:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; var(rr) # Variance of firm returns (similar equation for standard deviation)</code><code class="nohighlight hljs ansi" style="display:block;">0.00020283685456709143</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; beta(rr) # Firm&#39;s market beta</code><code class="nohighlight hljs ansi" style="display:block;">0.7698040453871026</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; alpha(rr) # Firm&#39;s market alpha</code><code class="nohighlight hljs ansi" style="display:block;">-0.00029218876560305055</code></pre><h2 id="More-Data-Using-DataFramesMeta"><a class="docs-heading-anchor" href="#More-Data-Using-DataFramesMeta">More Data Using DataFramesMeta</a><a id="More-Data-Using-DataFramesMeta-1"></a><a class="docs-heading-anchor-permalink" href="#More-Data-Using-DataFramesMeta" title="Permalink"></a></h2><p>While the above works well, abnormal returns are often calculated on thousands or more firm-events. Here, I earnings announcements for about 100 firms from March to November 2020:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; df_events = CSV.File(joinpath(data_dir, &quot;firm_earnings_announcements.csv&quot;)) |&gt; DataFrame</code><code class="nohighlight hljs ansi" style="display:block;">283×2 DataFrame
+Market Columns: hml, umd, intercept, mktrf, smb, rf
+Firm Columns: ret</code></pre><div class="admonition is-info"><header class="admonition-header">Note</header><div class="admonition-body"><p>For performance, especially when loading large datasets of firm data, it is best to make sure the firm dataframe is presorted by ID then Date.</p></div></div><p>This object rearranges the data so it can be quickly accessed later. The <code>mkt_data</code> now contains 3 things:</p><ol><li>A <a href="https://github.com/JuliaFinance/BusinessDays.jl">BusinessDays.jl</a> calendar that exactly matches the days loaded in the market data.</li><li>Each column of the <code>df_mkt</code> stored</li><li>Each column of the <code>df_firm</code> stored in a <code>Dict</code> for each firm.</li></ol><p>Data is accessed on a by firm basis, for a given date range and specific columns. For example, say you wanted to get the data for Oracle (ORCL) (&quot;Permno&quot; of 10104), for a specific date (using <a href="https://github.com/ChrisRackauckas/EllipsisNotation.jl">EllipsisNotation.jl</a>) and set of columns:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; orcl_data = mkt_data[10104, Date(2020) .. Date(2020, 6, 30), [:ret, :mktrf, :smb]]</code><code class="nohighlight hljs ansi" style="display:block;">125×3 FixedTable{3, Float64, SubArray{Float64, 1, OffsetArrays.OffsetVector{Float64, Vector{Float64}}, Tuple{UnitRange{Int64}}, true}, Symbol}:
+  0.0183088    0.0086  -0.0089
+ -0.00352182  -0.0067   0.0039
+  0.00520838   0.0036  -0.0007
+  0.00222056  -0.0019  -0.0001
+  0.00387742   0.0047  -0.0006
+  0.00461851   0.0065  -0.0064
+  0.00128723  -0.0034  -0.0018
+  0.00238753   0.0073  -0.0011
+  0.0054965   -0.0006   0.0038
+ -0.00218664   0.0016   0.0046
+  ⋮
+  0.0421195    0.0019   0.0009
+  0.0132241   -0.0045   0.0009
+  0.0132352    0.0071   0.0083
+  0.00126995   0.0042   0.0016
+ -0.0135894   -0.0261  -0.0045
+  0.0016532    0.0112   0.0023
+ -0.00641846  -0.0244   0.0013
+  0.010705     0.0151   0.0126
+  0.00931341   0.0158   0.0008</code></pre><p>Sometimes it is helpful to add a new column (either for convenience or performance reasons, discussed later). To do so, this package borrows the <code>transform!</code> function from <a href="https://github.com/JuliaData/DataFrames.jl">DataFrames.jl</a>, using a formula where the left side is the column that is created:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; transform!(mkt_data, @formula(mkt ~ mktrf + rf));</code><code class="nohighlight hljs ansi" style="display:block;"></code></pre><p>It is also easy to specify the columns as a formula from <a href="https://github.com/JuliaStats/StatsModels.jl">StatsModels.jl</a>. This allows for arbitrary functions, interactions and lags/leads:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; orcl_data = mkt_data[10104, Date(2020) .. Date(2020, 6, 30), @formula(ret ~ mkt + lag(mkt) + log1p(smb) * hml)]</code><code class="nohighlight hljs ansi" style="display:block;">125×7 FixedTable{7, Float64, SubArray{Float64, 1, OffsetArrays.OffsetVector{Float64, Vector{Float64}}, Tuple{UnitRange{Int64}}, true}, String}:
+  0.0183088   1.0   0.00866   0.00287  -0.00893984   -0.0032   2.86075e-5
+ -0.00352182  1.0  -0.00664   0.00866   0.00389241    0.0      0.0
+  0.00520838  1.0   0.00366  -0.00664  -0.000700245  -0.0054   3.78132e-6
+  0.00222056  1.0  -0.00184   0.00366  -0.000100005  -0.0025   2.50013e-7
+  0.00387742  1.0   0.00476  -0.00184  -0.00060018   -0.0065   3.90117e-6
+  0.00461851  1.0   0.00656   0.00476  -0.00642057   -0.0049   3.14608e-5
+  0.00128723  1.0  -0.00334   0.00656  -0.00180162   -0.0036   6.48584e-6
+  0.00238753  1.0   0.00736  -0.00334  -0.00110061   -0.0009   9.90545e-7
+  0.0054965   1.0  -0.00054   0.00736   0.0037928    -0.0016  -6.06848e-6
+ -0.00218664  1.0   0.00166  -0.00054   0.00458945   -0.008   -3.67156e-5
+  ⋮                                                   ⋮
+  0.0421195   1.0   0.0019   -0.004     0.000899595  -0.0053  -4.76785e-6
+  0.0132241   1.0  -0.0045    0.0019    0.000899595  -0.0065  -5.84737e-6
+  0.0132352   1.0   0.0071   -0.0045    0.00826574   -0.0133  -0.000109934
+  0.00126995  1.0   0.0042    0.0071    0.00159872   -0.006   -9.59233e-6
+ -0.0135894   1.0  -0.0261    0.0042   -0.00451016   -0.0136   6.13381e-5
+  0.0016532   1.0   0.0112   -0.0261    0.00229736    0.0053   1.2176e-5
+ -0.00641846  1.0  -0.0244    0.0112    0.00129916   -0.014   -1.81882e-5
+  0.010705    1.0   0.0151   -0.0244    0.0125213     0.0183   0.000229139
+  0.00931341  1.0   0.0158    0.0151    0.00079968    0.0001   7.9968e-8</code></pre><div class="admonition is-info"><header class="admonition-header">Note</header><div class="admonition-body"><p>While interactions and arbitrary functions are supported, they can significantly slow down performance since a new vector is allocated in each call. Therefore, it is generally recommended to create a new pice of data by calling <code>transform!</code> on the dataset to create the new columns. This advice does not apply to lag/lead terms since those do not need to allocate a new column.</p></div></div><p>The data returned by accessing <code>mkt_data</code> is a <code>FixedTable</code>, which is essentially a matrix with a fixed width (useful for multiplication and returning a <code>StaticMatrix</code> from <a href="https://github.com/JuliaArrays/StaticArrays.jl">StaticArrays.jl</a>). Access into this data is done either by a slice as you would any other matrix:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; orcl_data[:, 1]</code><code class="nohighlight hljs ansi" style="display:block;">125-element view(OffsetArray(::Vector{Float64}, 1:505), 253:377) with eltype Float64:
+  0.018308818340301514
+ -0.0035218247212469578
+  0.0052083819173276424
+  0.002220557536929846
+  0.003877422772347927
+  0.004618511069566011
+  0.0012872322695329785
+  0.002387531101703644
+  0.005496504716575146
+ -0.0021866390015929937
+  ⋮
+  0.042119529098272324
+  0.013224118389189243
+  0.013235245831310749
+  0.0012699509970843792
+ -0.01358941849321127
+  0.0016531989676877856
+ -0.006418457254767418
+  0.010705020278692245
+  0.00931340642273426</code></pre><p>Or via the names used to access it in the first place:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; orcl_data[:, :mkt]</code><code class="nohighlight hljs ansi" style="display:block;">125-element view(OffsetArray(::Vector{Float64}, 1:672), 253:377) with eltype Float64:
+  0.00866
+ -0.00664
+  0.00366
+ -0.00184
+  0.0047599999999999995
+  0.006560000000000001
+ -0.0033399999999999997
+  0.00736
+ -0.0005399999999999999
+  0.00166
+  ⋮
+  0.0019
+ -0.004500000000000001
+  0.0071
+  0.0042
+ -0.0261
+  0.0112
+ -0.0244
+  0.0151
+  0.0158</code></pre><h2 id="Estimating-Regressions"><a class="docs-heading-anchor" href="#Estimating-Regressions">Estimating Regressions</a><a id="Estimating-Regressions-1"></a><a class="docs-heading-anchor-permalink" href="#Estimating-Regressions" title="Permalink"></a></h2><p>The main goal of this package is quickly running regressions for firm events. The example used here is a firm&#39;s earnings announcement. Starting with one example, Oracle announced its Q3 2020 earnings on 2020-9-10. Calculating abnormal returns typically follows three steps:</p><ol><li>Estimate how the firm typically responds to market factors during a control (or estimation) window</li><li>Use the coefficients from that regression to estimate how the firm should do during the event window</li><li>Subtract the estimated return from the actual firm return during the event window. Depending on how this difference is aggregated, these are typically buy and hold abnormal returns (bhar) or cumulative abnormla returns (CAR)</li></ol><p>First, to create the table for the estimation window, define an estimation window and an event window:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; event_date = Date(&quot;2020-09-10&quot;)</code><code class="nohighlight hljs ansi" style="display:block;">2020-09-10</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; est_start = advancebdays(mkt_data.calendar, event_date, -120)</code><code class="nohighlight hljs ansi" style="display:block;">2020-03-20</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; est_end = advancebdays(mkt_data.calendar, event_date, -2)</code><code class="nohighlight hljs ansi" style="display:block;">2020-09-08</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; event_start = advancebdays(mkt_data.calendar, event_date, -1)</code><code class="nohighlight hljs ansi" style="display:block;">2020-09-09</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; event_end = advancebdays(mkt_data.calendar, event_date, 1)</code><code class="nohighlight hljs ansi" style="display:block;">2020-09-11</code></pre><p>Next, run the estimation regression (the regression automatically selects the correct columns from the data, so it is not necessary to do that beforehand):</p><pre><code class="language-julia hljs">orcl_data = mkt_data[10104, est_start .. est_end]
+rr = quick_reg(orcl_data, @formula(ret ~ mkt + smb + hml))</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Obs: 119, ret ~ -0.0 + 0.77*mkt + -0.302*smb + -0.012*hml, AdjR2: 52.744%</code></pre><p>Then get the data for the event window:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; orcl_data = mkt_data[10104, event_start .. event_end];</code><code class="nohighlight hljs ansi" style="display:block;"></code></pre><p>Now it is easy to run some statistics for the event window:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; bhar(orcl_data, rr) # BHAR based on regression</code><code class="nohighlight hljs ansi" style="display:block;">0.026330396109940146</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; car(orcl_data, rr) # CAR based on regression</code><code class="nohighlight hljs ansi" style="display:block;">0.02612077404623775</code></pre><p>It is also easy to calculate some statistics for the estimation window:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; var(rr) # Variance of firm returns (similar equation for standard deviation)</code><code class="nohighlight hljs ansi" style="display:block;">0.00020283685456709143</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; beta(rr) # Firm&#39;s market beta</code><code class="nohighlight hljs ansi" style="display:block;">0.7698040453871025</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; alpha(rr) # Firm&#39;s market alpha</code><code class="nohighlight hljs ansi" style="display:block;">-0.0002921887656030498</code></pre><h2 id="More-Data-Using-DataFramesMeta"><a class="docs-heading-anchor" href="#More-Data-Using-DataFramesMeta">More Data Using DataFramesMeta</a><a id="More-Data-Using-DataFramesMeta-1"></a><a class="docs-heading-anchor-permalink" href="#More-Data-Using-DataFramesMeta" title="Permalink"></a></h2><p>While the above works well, abnormal returns are often calculated on thousands or more firm-events. Here, I use earnings announcements for about 100 firms from March to November 2020:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; df_events = CSV.File(joinpath(data_dir, &quot;firm_earnings_announcements.csv&quot;)) |&gt; DataFrame</code><code class="nohighlight hljs ansi" style="display:block;">283×2 DataFrame
  Row │ permno  ea
      │ Int64   Date
 ─────┼────────────────────
@@ -224,9 +218,9 @@ Currently selected dates: 2020-09-09..2020-09-11
     @rtransform(:reg = quick_reg(mkt_data[:permno, :est_start .. :est_end], @formula(ret ~ mkt + smb + hml)))
     @rtransform(
         :bhar_reg = bhar(mkt_data[:permno, :event_start .. :event_end], :reg),
-        :bhar_simple = bhar(mkt_data[:permno, :event_start .. :event_end], &quot;ret&quot;, &quot;mkt&quot;),
+        :bhar_simple = bhar(mkt_data[:permno, :event_start .. :event_end, [&quot;ret&quot;, &quot;mkt&quot;]]),
         :std = std(:reg),
-        :total_ret = bh_return(mkt_data[:permno, :event_start .. :event_end], &quot;ret&quot;),
+        :total_ret = bh_return(mkt_data[:permno, :event_start .. :event_end, [&quot;ret&quot;]]),
     )
     select(Not([:est_start, :est_end, :event_start, :event_end, :reg]))
 end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">283×6 DataFrame
@@ -249,7 +243,7 @@ end</code></pre><pre class="documenter-example-output"><code class="nohighlight 
  281 │  91668  2020-10-30   0.0290468    0.0200758   0.017888     0.0283726
  282 │  12449  2020-11-05  -0.0402344   -0.0572696   0.0183221   -0.0128859
  283 │  61399  2020-11-18  -0.0761987   -0.0706244   0.0134081   -0.0759727
-                                                              268 rows omitted</code></pre><h2 id="Vectorizing-the-Data"><a class="docs-heading-anchor" href="#Vectorizing-the-Data">Vectorizing the Data</a><a id="Vectorizing-the-Data-1"></a><a class="docs-heading-anchor-permalink" href="#Vectorizing-the-Data" title="Permalink"></a></h2><p>While the above works, and is reasonably fast (Doing a test on 1 million regressions takes about 65 seconds on a Ryzen 5 3600), faster is better.</p><p>In particular, this process can be very fast if all the predictor variables in a regression are based on the market data (as they are above). This allows a single RHS matrix to be built and to just select the necessary rows from that matrix. Further, while building the table for each firm is generally fast, if it is only necessary to build it once that is preferred.</p><p>To make this possible, request a vector of firm IDs and date starts and ends:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; est_starts = advancebdays.(mkt_data.calendar, df_events.ea, -120)</code><code class="nohighlight hljs ansi" style="display:block;">283-element Vector{Dates.Date}:
+                                                              268 rows omitted</code></pre><h2 id="Vectorizing-the-Data"><a class="docs-heading-anchor" href="#Vectorizing-the-Data">Vectorizing the Data</a><a id="Vectorizing-the-Data-1"></a><a class="docs-heading-anchor-permalink" href="#Vectorizing-the-Data" title="Permalink"></a></h2><p>While the above works, and is reasonably fast (Doing a test on 1 million regressions takes about 26 seconds on a Ryzen 7 5700X), faster is better.</p><p>In particular, a significant reason the above is slow method is that the formula is parsed for each iteration. If the formula is the same for all of the cases, it is better if it is simply parsed once. Therefore, it is optimal to do as much as possible using vectors.</p><p>To make this possible, this package provides a type <code>IterateFixedTable</code> which will return a <code>FixedTable</code> based on a supplied set of ids, dates and columns (or formula as above):</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; est_starts = advancebdays.(mkt_data.calendar, df_events.ea, -120)</code><code class="nohighlight hljs ansi" style="display:block;">283-element Vector{Dates.Date}:
  2019-09-12
  2019-09-26
  2019-09-25
@@ -289,12 +283,35 @@ end</code></pre><pre class="documenter-example-output"><code class="nohighlight 
  2020-10-26
  2020-10-28
  2020-11-03
- 2020-11-16</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; vec_data = mkt_data[df_events.permno, est_starts .. est_ends]</code><code class="nohighlight hljs ansi" style="display:block;">Iterable set of TimelineTable with 96 unique firms
-and a total number of iterations of 283 and a parent of
+ 2020-11-16</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; vec_data = mkt_data[df_events.permno, est_starts .. est_ends, [:ret, :mkt, :smb]]</code><code class="nohighlight hljs ansi" style="display:block;">Iterable set of FixedTable with 283 unique datapoints
 MarketData with ID type Int64 with 99 unique firms
 MarketCalendar: 2019-01-02 .. 2021-08-31 with 672 business days
-Market Columns: mkt, smb, hml, umd
-Firm Columns: ret</code></pre><p>This object can be similarly passed to the above functions, just like a firm level table. The function will iterate through the data and return a vector of results.</p><p>However, the above is rather ugly and is far less flexible (no IDs to update, etc.). A more practical way to use this is to continue using the <code>@chain</code> macro:</p><pre><code class="language-julia hljs">df_events = @chain df_events begin
+Market Columns: mkt, hml, umd, intercept, mktrf, smb, rf
+Firm Columns: ret</code></pre><p>Each element of <code>vec_data</code> is then easily accessible by an integer or can be looped over in a for loop:</p><pre><code class="language-julia hljs"># for x in vec_data
+#     x
+# end
+# or
+vec_data[10]</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">119×3 FixedTable{3, Float64, SubArray{Float64, 1, OffsetArrays.OffsetVector{Float64, Vector{Float64}}, Tuple{UnitRange{Int64}}, true}, Symbol}:
+ -0.0395488    0.00016  -0.0022
+ -0.016239     0.00076  -0.001
+  0.0025055    0.00746  -0.0026
+ -0.0180829    0.00026  -0.0035
+ -0.00883372   0.00026   0.0058
+  0.0140483   -0.00324   0.0
+ -0.00327713  -0.00134  -0.0036
+ -0.0379615    0.00246   0.0005
+  0.00590333   0.00926   0.0132
+ -0.0182239    0.00196   0.0006
+  ⋮                     
+  0.0581513    0.0013    0.0112
+  0.0189585    0.0144    0.0027
+  0.0167216    0.0173    0.0161
+  0.0261756   -0.0045    0.01
+  0.106321     0.0292    0.0188
+ -0.00754946  -0.0118   -0.0142
+ -0.0896382   -0.0291   -0.0056
+  0.045393     0.0053    0.0018
+ -0.00324047   0.0095    0.0004</code></pre><p>This object can be similarly passed to the above functions, just like a firm level table. The function will iterate through the data and return a vector of results.</p><p>However, the above is rather ugly. A more practical way to use this is to continue using the <code>@chain</code> macro:</p><pre><code class="language-julia hljs">df_events = @chain df_events begin
     @rtransform(
         :est_start = advancebdays(mkt_data.calendar, :ea, -120),
         :est_end = advancebdays(mkt_data.calendar, :ea, -2),
@@ -304,11 +321,11 @@ Firm Columns: ret</code></pre><p>This object can be similarly passed to the abov
     @transform(:reg = quick_reg(mkt_data[:permno, :est_start .. :est_end], @formula(ret ~ mkt + smb + hml)))
     @transform(
         :bhar_reg = bhar(mkt_data[:permno, :event_start .. :event_end], :reg),
-        :bhar_simple = bhar(mkt_data[:permno, :event_start .. :event_end], &quot;ret&quot;, &quot;mkt&quot;),
+        :bhar_simple = bhar(mkt_data[:permno, :event_start .. :event_end, [&quot;ret&quot;, &quot;mkt&quot;]]),
     )
-    @rtransform(
-        :std = std(:reg),
-        :total_ret = bh_return(mkt_data[:permno, :event_start .. :event_end], &quot;ret&quot;),
+    @transform(
+        :std = std.(:reg),
+        :total_ret = bh_return(mkt_data[:permno, :event_start .. :event_end, [&quot;ret&quot;]]),
     )
     select(Not([:est_start, :est_end, :event_start, :event_end, :reg]))
 end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">283×6 DataFrame
@@ -331,18 +348,4 @@ end</code></pre><pre class="documenter-example-output"><code class="nohighlight 
  281 │  91668  2020-10-30   0.0290468    0.0200758   0.017888     0.0283726
  282 │  12449  2020-11-05  -0.0402344   -0.0572696   0.0183221   -0.0128859
  283 │  61399  2020-11-18  -0.0761987   -0.0706244   0.0134081   -0.0759727
-                                                              268 rows omitted</code></pre><p>Notice that the only difference between these two <code>@chain</code> macros is that this one uses <code>@transform</code> instead of <code>@rtransform</code>. This sends the entire column vector to the function, and allows for much faster overall results. Those same 1 million regressions now takes just 3 seconds on the same computer.</p><h2 id="Lag-and-Lead-Operators"><a class="docs-heading-anchor" href="#Lag-and-Lead-Operators">Lag and Lead Operators</a><a id="Lag-and-Lead-Operators-1"></a><a class="docs-heading-anchor-permalink" href="#Lag-and-Lead-Operators" title="Permalink"></a></h2><p>Sometimes, you might want to include a lag or lead variable in your regression. This package is designed to handle those cases. For example:</p><pre><code class="language-julia hljs">quick_reg(mkt_data[10104], @formula(ret ~ lag(mkt, 2) + lag(mkt) + mkt + lead(mkt)))</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Obs: 503, ret ~ 0.0 + -0.166*mkt_lag2 + -0.178*mkt_lag1 + 0.894*mkt + -0.085*mkt_lead1, AdjR2: 61.008%</code></pre><p>Note that these lag and lead operators will get data from outside the requested period to prevent the sample size from shrinking. For example:</p><pre><code class="language-julia hljs">mkt_data[10104, Date(2020) .. Date(2020, 1, 10), [:ret, :mkt, lag(:mkt)]]</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">TimelineTable for 10104 and available columns mkt,smb,hml,umd,ret
-Maximum dates given current column selection: 2019-01-03..2020-12-31
-Currently selected dates: 2020-01-01..2020-01-10
-============= ============= ========== ===========
-        Date           ret        mkt   lag(mkt)
-============= ============= ========== ===========
-  2020-01-02     0.0183088    0.00866    0.00287
-  2020-01-03   -0.00352182   -0.00664    0.00866
-  2020-01-06    0.00520838    0.00366   -0.00664
-  2020-01-07    0.00222056   -0.00184    0.00366
-  2020-01-08    0.00387742    0.00476   -0.00184
-  2020-01-09    0.00461851    0.00656    0.00476
-  2020-01-10    0.00128723   -0.00334    0.00656
-============= ============= ========== ===========
-</code></pre><p>The first value under &quot;lag(mkt)&quot; is from 2019-12-31, but this makes sure that a regression or abnormal return has all the data necessary.</p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../">« Introduction</a><a class="docs-footer-nextpage" href="../api/">API »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 0.27.15 on <span class="colophon-date" title="Thursday 31 March 2022 16:56">Thursday 31 March 2022</span>. Using Julia version 1.7.2.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+                                                              268 rows omitted</code></pre><p>Notice that the only difference between these two <code>@chain</code> macros is that this one uses <code>@transform</code> instead of <code>@rtransform</code>. This sends the entire column vector to the function, and allows for much faster overall results. Those same 1 million regressions now takes just 0.44 seconds on the same computer.</p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../">« Introduction</a><a class="docs-footer-nextpage" href="../api/">API »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 0.27.23 on <span class="colophon-date" title="Tuesday 13 September 2022 22:54">Tuesday 13 September 2022</span>. Using Julia version 1.8.1.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>

@@ -7,7 +7,7 @@ using AbnormalReturns
 df_firm = CSV.File(joinpath("data", "daily_ret.csv")) |> DataFrame
 df_mkt = CSV.File(joinpath("data", "mkt_ret.csv")) |> DataFrame
 df_res = CSV.File(joinpath("data", "car_results.csv")) |> DataFrame
-#df_mkt[!, :mkt] = df_mkt.mktrf .+ df_mkt.rf
+
 ##
 
 data = MarketData(
@@ -22,6 +22,16 @@ DataFrames.transform!(data, @formula(mkt ~ mktrf + rf))
 @test AbnormalReturns.date_range(data.calendar, Date(2019, 4) .. Date(2019, 4, 5)) == 62:66
 @test AbnormalReturns.date_range(data.calendar, Date(2019, 4) .. Date(2019, 4, 6)) == 62:66
 
+##
+@test isapprox(std(data[18428, Date(2019, 4) .. Date(2019, 10), ["ret"]]), 0.0224085; atol=.00001)
+@test isapprox(var(data[18428, Date(2019, 4) .. Date(2019, 10), ["ret"]]), 0.0005021; atol=.00001)
+@test isapprox.(std(data[[18428, 18428], [Date(2019, 4), Date(2019, 4)] .. [Date(2019, 10), Date(2019, 10)], ["ret"]]), 0.0224085; atol=.00001) |> all
+@test isapprox.(var(data[[18428, 18428], [Date(2019, 4), Date(2019, 4)] .. [Date(2019, 10), Date(2019, 10)], ["ret"]]), 0.0005021; atol=.00001) |> all
+
+@test isapprox(std(data[18428, Date(2019, 4) .. Date(2019, 10), ["ret", "mktrf"]]), 0.0189731; atol=.00001)
+@test isapprox(var(data[18428, Date(2019, 4) .. Date(2019, 10), ["ret", "mktrf"]]), 0.00036; atol=.00001)
+@test isapprox.(std(data[[18428, 18428], [Date(2019, 4), Date(2019, 4)] .. [Date(2019, 10), Date(2019, 10)], ["ret", "mktrf"]]), 0.0189731; atol=.00001) |> all
+@test isapprox.(var(data[[18428, 18428], [Date(2019, 4), Date(2019, 4)] .. [Date(2019, 10), Date(2019, 10)], ["ret", "mktrf"]]), 0.00036; atol=.00001) |> all
 ##
 
 rr = quick_reg(data[18428, Date(2019, 4) .. Date(2019, 10)], @formula(ret ~ mktrf + hml))
@@ -72,8 +82,8 @@ cars = car(data[df_res.permno, event_start.(df_res.event_date) .. event_end.(df_
 @test isapprox(round.(cars, sigdigits=3), df_res.car_mm)
 bhars = bhar(data[df_res.permno, event_start.(df_res.event_date) .. event_end.(df_res.event_date)], rr_market)
 @test isapprox(round.(bhars, sigdigits=3), df_res.bhar_mm)
-stds = std.(rr_market)
-vars = var.(rr_market)
+stds = std(rr_market)
+vars = var(rr_market)
 @test isapprox(round.(vars, digits=10), df_res.estimation_period_variance_market_model_)
 
 ##

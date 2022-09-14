@@ -1,6 +1,4 @@
 
-Statistics.var(rr::RegressionModel) = rss(rr) / dof_residual(rr)
-Statistics.std(rr::RegressionModel) = sqrt(var(rr))
 
 
 
@@ -61,7 +59,7 @@ function bh_return(data::FixedTable{1}; minobs=0.8)
     if length(d) < adjust_minobs(minobs, data)
         missing
     else
-        bh_return(data[:, 1])
+        bh_return(d)
     end
 end
 
@@ -239,8 +237,37 @@ Similar to constructing the regression, passing an `IterateFixedTable` will retu
 car(data::Union{IterateFixedTable, FixedTable}; minobs=0.8) = simple_diff(data, car; minobs)
 car(data::Union{IterateFixedTable, FixedTable, Tuple}, rr; minobs=0.8) = pred_diff(data, rr, car; minobs)
 
-Statistics.var(data::Union{IterateFixedTable, FixedTable}; minobs=0.8) = simple_diff(data, var_diff; minobs)
-Statistics.std(data::Union{IterateFixedTable, FixedTable}; minobs=0.8) = std(var(data; minobs))
+
+"""
+    var[std](rr::Union{AbstractVector{<:RegressionModel}, RegressionModel})
+    var[std](data::Union{IterateFixedTable, FixedTable}; minobs=0.8)
+
+If a regression model is passed, then this calculates the variance (standard deviation)
+based on the residual sum of squares divided by the degrees of freedom. A vector of
+RegressionModel will return the same length of vector results.
+
+If a FixedTable is passed (or an IterateFixedTable), and that contains only one column,
+then the variance (standard deviation) is calculated for that column. If it has two
+columns, then the calculation is based on the difference between the columns.
+"""
+Statistics.var(data::Union{IterateFixedTable{T, 2}, FixedTable{2}}; minobs=0.8) where {T} = simple_diff(data, var_diff; minobs)
+function Statistics.var(data::FixedTable{1}; minobs=0.8)
+    d = data[:, 1]
+    if length(d) < adjust_minobs(minobs, data)
+        missing
+    else
+        var(d)
+    end
+end
+Statistics.var(data::IterateFixedTable{T, 1}; minobs=0.8) where {T} = var.(data; minobs)
+
+Statistics.std(data::FixedTable; minobs=0.8) = sqrt(var(data; minobs))
+Statistics.std(data::IterateFixedTable; minobs=0.8) = sqrt.(var(data; minobs))
+
+Statistics.var(rr::RegressionModel) = rss(rr) / dof_residual(rr)
+Statistics.std(rr::RegressionModel) = sqrt(var(rr))
+Statistics.var(rrs::AbstractVector{<:RegressionModel}) = var.(rrs)
+Statistics.std(rrs::AbstractVector{<:RegressionModel}) = sqrt.(var(rrs))
 
 
 function get_coefficient_pos(rr::RegressionModel, coefname::String...)

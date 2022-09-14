@@ -1,7 +1,7 @@
 name = "AbnormalReturns"
 uuid = "f9c80461-2ebf-4c7c-9c1c-d30d9d100fd8"
 authors = ["junder873 <junder873@gmail.com>"]
-version = "0.2.0"
+version = "0.2.1"
 
 [deps]
 BusinessDays = "4f18b42c-503e-5345-9536-bb0f25fc7038"

@@ -408,6 +408,31 @@ Base.getindex(data::MarketData{T}, id::T, col::String) where {T} = data[id, Symb
 Base.getindex(data::MarketData{T}, id::T, col::Union{Term, ContinuousTerm}) where {T} = data[id, col.sym]
 Base.getindex(data::MarketData{T}, id::T, col::StatsModels.LeadLagTerm) where {T} = data[id, col.term]
 
+##################################################
+# Simple function to return single value
+##################################################
+function Base.getindex(
+    data::DataVector,
+    loc::Int
+)
+    if loc ∉ interval(data)
+        missing
+    elseif data.missing_bdays !== nothing && data.missing_bdays[loc]
+        missing
+    else
+        data.data[loc]
+    end
+end
+function Base.getindex(
+    data::MarketData{T},
+    id::T,
+    dt::Date,
+    col::Union{AbstractString, Symbol}
+) where {T}
+    col = data[id, col]
+    l = date_pos(calendar(data), dt)
+    col[l]
+end
 
 ##################################################
 # Basic get functions that return a view of the

@@ -5,6 +5,7 @@ using AbnormalReturns
 
 
 df_firm = CSV.File(joinpath("data", "daily_ret.csv")) |> DataFrame
+# one day (Permno 10104, 2019-01-17) is deleted to provide a test for missing data
 df_mkt = CSV.File(joinpath("data", "mkt_ret.csv")) |> DataFrame
 df_res = CSV.File(joinpath("data", "car_results.csv")) |> DataFrame
 
@@ -45,6 +46,35 @@ rr = quick_reg(data[18428, Date(2019, 4) .. Date(2019, 10)], @formula(ret ~ mktr
 @test islinear(rr)
 @test alpha(rr) == rr.coef[1]
 @test beta(rr) == rr.coef[2]
+
+##
+rr = quick_reg(data[10104, Date(2019, 1, 2) .. Date(2019, 6)], @formula(ret ~ mktrf + hml))
+@test nobs(rr) == 103 # one less due to missing date
+@test all(isapprox.(coef(rr), [0.00036009, 0.886629, -0.0247203]; atol=.0001))
+@test isapprox(r2(rr), 0.568637; atol=.0001)
+##
+# test that function term works and interactions work
+# lag and lead terms with boundary
+rr = quick_reg(data[11762, Date(2019, 1, 2) .. Date(2019, 6)], @formula(ret ~ log1p(mktrf) * lead(mktrf) + hml))
+@test nobs(rr) == 104
+@test isapprox(adjr2(rr), 0.5872816; atol=.000001)
+@test all(isapprox.(coef(rr), [0.00010658, 1.233606, 0.0290669, 0.2685282, -1.80086095]; atol=.000001))
+##
+rr = quick_reg(data[11762, Date(2019, 1, 2) .. Date(2019, 6)], @formula(ret ~ log1p(mktrf) * lag(mktrf) + hml))
+@test nobs(rr) == 103
+@test isapprox(adjr2(rr), 0.61329402; atol=.000001)
+@test all(isapprox.(coef(rr), [0.000478025, 1.262271804, -0.0727015, 0.3222624, 20.7364917]; atol=.000001))
+##
+# and again with a missing data point
+rr = quick_reg(data[10104, Date(2019, 1, 10) .. Date(2019, 6)], @formula(ret ~ log1p(mktrf) * lead(mktrf) + hml))
+@test nobs(rr) == 97
+@test all(isapprox.(coef(rr), [0.000156196, 0.85712201, -0.13628144, -0.03920588, -12.1167821]; atol=.000001))
+@test isapprox(adjr2(rr), 0.4994264; atol=.000001)
+##
+# lag and lead terms with boundary
+rr = quick_reg(data[10104, Date(2019, 1, 10) .. Date(2019, 6)], @formula(ret ~ log1p(mktrf) * lag(mktrf) + hml))
+@test nobs(rr) == 97
+@test isapprox(adjr2(rr), 0.48525097; atol=.000001)
 
 ##
 

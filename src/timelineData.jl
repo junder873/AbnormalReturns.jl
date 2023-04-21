@@ -475,13 +475,44 @@ Base.getindex(data::MarketData{T}, id::T, r::UnitRange, col::InterceptTerm{true}
     col::InteractionTerm,
     missing_bdays=nothing
 ) where {T}
-    out = fill(1.0, length(r))
+    l = length(r)
+    if missing_bdays !== nothing
+        l -= count(missing_bdays)
+    end
+    out = fill(1.0, l)
     for t in col.terms
         out .*= data[id, r, t, missing_bdays]
     end
     out = OffsetVector(out, r[1]-1)
-    view(out, r)
+    if missing_bdays === nothing
+        view(out, r)
+    else
+        view(out, r[1]:r[end]-count(missing_bdays))
+    end
 end
+
+# @inline function Base.getindex(
+#     data::MarketData{T},
+#     id::T,
+#     r::UnitRange,
+#     col::InteractionTerm,
+#     missing_bdays::Nothing=nothing
+# ) where {T}
+#     l = length(r)
+#     if missing_bdays !== nothing
+#         l -= count(missing_bdays)
+#     end
+#     out = fill(1.0, l)
+#     for t in col.terms
+#         out .*= data[id, r, t, missing_bdays]
+#     end
+#     out = OffsetVector(out, r[1]-1)
+#     if missing_bdays === nothing
+#         view(out, r)
+#     else
+#         view(out, r[1]:r[end]-count(missing_bdays))
+#     end
+# end
 
 @inline function Base.getindex(
     data::MarketData{T},
@@ -490,8 +521,12 @@ end
     col::FunctionTerm,
     missing_bdays=nothing
 ) where {T}
-    out = OffsetVector(col.f.((data[id, r, t, missing_bdays] for t in Names)...), r[1]-1)
-    view(out, r)
+    out = OffsetVector(col.f.((data[id, r, t, missing_bdays] for t in col.args)...), r[1]-1)
+    if missing_bdays === nothing
+        view(out, r)
+    else
+        view(out, r[1]:r[end]-count(missing_bdays))
+    end
 end
 
 ##################################################

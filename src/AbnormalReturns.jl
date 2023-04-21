@@ -7,7 +7,7 @@ using Statistics
 using Dates
 using DataFrames
 using Tables
-using IntervalSets: ClosedInterval, Ellipsis, (..)
+using IntervalSets: ClosedInterval, (..)
 using SparseArrays
 @reexport using BusinessDays
 @reexport using StatsModels

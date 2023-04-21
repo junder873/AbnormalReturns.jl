@@ -90,7 +90,7 @@ This object rearranges the data so it can be quickly accessed later. The `mkt_da
 2. Each column of the `df_mkt` stored
 3. Each column of the `df_firm` stored in a `Dict` for each firm.
 
-Data is accessed on a by firm basis, for a given date range and specific columns. For example, say you wanted to get the data for Oracle (ORCL) ("Permno" of 10104), for a specific date (using [EllipsisNotation.jl](https://github.com/ChrisRackauckas/EllipsisNotation.jl)) and set of columns:
+Data is accessed on a by firm basis, for a given date range and specific columns. For example, say you wanted to get the data for Oracle (ORCL) ("Permno" of 10104), for a specific date (using [IntervalSets.jl](https://github.com/JuliaMath/IntervalSets.jl)) and set of columns:
 ```@repl main_run
 orcl_data = mkt_data[10104, Date(2020) .. Date(2020, 6, 30), [:ret, :mktrf, :smb]]
 ```

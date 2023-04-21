@@ -341,8 +341,8 @@ end
 
 get_missing_bdays(data::MarketData{T}, id::T, r::UnitRange{Int}, col::InterceptTerm{true}) where {T} = get_missing_bdays(data, id, r, :intercept)
 
-function get_missing_bdays(data::MarketData{T}, id::T, r::UnitRange{Int}, col::FunctionTerm{Forig, Fanon, Names}) where {T, Forig, Fanon, Names}
-    combine_missing_bdays(get_missing_bdays.(Ref(data), id, Ref(r), Names)...)
+function get_missing_bdays(data::MarketData{T}, id::T, r::UnitRange{Int}, col::FunctionTerm) where {T}
+    combine_missing_bdays(get_missing_bdays.(Ref(data), id, Ref(r), col.args)...)
 end
 function get_missing_bdays(data::MarketData{T}, id::T, r::UnitRange{Int}, col::InteractionTerm) where {T}
     combine_missing_bdays(get_missing_bdays.(Ref(data), id, Ref(r), col.terms)...)
@@ -487,10 +487,10 @@ end
     data::MarketData{T},
     id::T,
     r::UnitRange,
-    col::FunctionTerm{Fo, Fa, Names},
+    col::FunctionTerm,
     missing_bdays=nothing
-) where {T, Fo,Fa,Names}
-    out = OffsetVector(col.fanon.((data[id, r, t, missing_bdays] for t in Names)...), r[1]-1)
+) where {T}
+    out = OffsetVector(col.f.((data[id, r, t, missing_bdays] for t in Names)...), r[1]-1)
     view(out, r)
 end
 
@@ -698,8 +698,8 @@ data_missing_bdays(x::DataVector) = x.missing_bdays
 
 interval(x::DataVector) = x.interval
 interval(data::MarketData{T}, id::T, col::Union{Symbol, String, ContinuousTerm, Term}) where {T} = interval(data[id, col])
-function interval(data::MarketData{T}, id::T, col::FunctionTerm{Forig, Fanon, Names}) where {T, Forig, Fanon, Names}
-    maximin(interval.(Ref(data), id, Names)...)
+function interval(data::MarketData{T}, id::T, col::FunctionTerm) where {T}
+    maximin(interval.(Ref(data), id, col.args)...)
 end
 function interval(data::MarketData{T}, id::T, col::InteractionTerm) where {T}
     maximin(interval.(Ref(data), id, col.terms)...)
@@ -744,7 +744,7 @@ in_market_data(data::MarketData, t::Symbol) = t ∈ keys(data.marketdata)
 in_market_data(data::MarketData, t::ContinuousTerm) = in_market_data(data, t.sym)
 in_market_data(data::MarketData, t::InteractionTerm) = all(in_market_data.(Ref(data), t.terms))
 in_market_data(data::MarketData, t::StatsModels.LeadLagTerm) = in_market_data(data, t.term)
-in_market_data(data::MarketData, t::FunctionTerm{Fo, Fa, Names}) where {Fo, Fa, Names} = all(in_market_data.(Ref(data), Names))
+in_market_data(data::MarketData, t::FunctionTerm) = all(in_market_data.(Ref(data), t.args))
 
 function DataFrames.transform!(
     data::MarketData,

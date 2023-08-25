@@ -5,7 +5,7 @@ struct IterateFixedTable{T, N, CL<:Union{Symbol, String}, COL<:Union{MatrixTerm,
     cols::COL
     key_vec::Vector{T}
     ranges::Vector{UnitRange{Int}}
-    missing_vecs::Dict{T, Union{Nothing, OffsetVector{Bool, SparseVector{Bool, Int}}}}
+    missing_vecs::Dict{T, Union{Nothing, OffsetVector{Bool, Vector{Bool}}}}
     req_lengths::Vector{Int}
     function IterateFixedTable(
         data::MarketData{T},
@@ -51,8 +51,10 @@ function Base.getindex(data::IterateFixedTable, i::Int)
     r = iter_range(data)[i]
     mssngs = iter_missings(data)[id]
     if mssngs !== nothing
-        mssngs = mssngs[r]
-        if nnz(mssngs) == 0
+        temp = view(mssngs, r)
+        if any(temp)
+            mssngs = mssngs[r]
+        else
             mssngs = nothing
         end
     end
@@ -66,7 +68,7 @@ function joined_missings(data, id, range_limits, cols)
     r = range_limits[id]
     out = combine_missing_bdays(get_missing_bdays.(Ref(data), id, Ref(r), cols)...)
     if out !== nothing
-        OffsetVector(out, first(r)-1)
+        OffsetVector(Vector(out), first(r)-1)
     else
         nothing
     end
@@ -88,12 +90,35 @@ function Base.getindex(
             maximin(interval.(Ref(data), id, cols)...) for id in u_ids
         ]
     )
-    for i in eachindex(ids, rs)
+    mssngs = Dict(u_ids .=> joined_missings.(Ref(data), u_ids, Ref(range_limits), Ref(cols)))
+
+
+    Threads.@threads for i in eachindex(ids, rs)
         @inbounds rs[i] = maximin(rs[i], range_limits[ids[i]])
+        # Remove the first missing value from the range limits
+        x = mssngs[ids[i]]
+        if x !== nothing
+            v = view(x, rs[i])
+            if length(v) > 0 && first(v)
+                j = findfirst(!, v)
+                if j === nothing
+                    @inbounds rs[i] = rs[i][end+1:end]
+                else
+                    @inbounds rs[i] = rs[i][j-1:end]
+                end
+            end
+            if length(v) > 0 && last(v)
+                j = findlast(!, v)
+                if j === nothing
+                    @inbounds rs[i] = rs[i][1:0]
+                else
+                    @inbounds rs[i] = rs[i][1:j-1]
+                end
+            end
+        end
     end
 
     
-    mssngs = Dict(u_ids .=> joined_missings.(Ref(data), u_ids, Ref(range_limits), Ref(cols)))
 
     if eltype(cols) <: AbstractTerm
         col_names = SVector{length(cols)}(coefnames(cols))

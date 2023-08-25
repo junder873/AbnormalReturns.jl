@@ -185,7 +185,7 @@ function MarketData(
         valuecols_firms = Symbol.([n for n in Symbol.(names(df_firms)) if n ∉ [date_col_firms, id_col]])
     end
 
-    df_market = select(df_market, vcat([date_col_market], valuecols_market))
+    select!(df_market, vcat([date_col_market], valuecols_market))
     dropmissing!(df_market, date_col_market)
     #dropmissing!(df_market)
     sort!(df_market)
@@ -194,7 +194,7 @@ function MarketData(
         @error("There are duplicate date rows in the market data")
     end
 
-    df_firms = select(df_firms, vcat([id_col, date_col_firms], valuecols_firms))
+    select!(df_firms, vcat([id_col, date_col_firms], valuecols_firms))
     dropmissing!(df_firms, [id_col, date_col_firms])
     sort!(df_firms, [id_col, date_col_firms])
 
@@ -335,7 +335,12 @@ function get_missing_bdays(data::MarketData{T}, id::T, r::UnitRange{Int}, col::U
     if mssngs === nothing
         nothing
     else
-        mssngs[r]
+        temp = mssngs[r]
+        if nnz(temp) == 0
+            nothing
+        else
+            temp
+        end
     end
 end
 
@@ -352,7 +357,12 @@ function get_missing_bdays(data::MarketData{T}, id::T, r::UnitRange{Int}, col::S
     if mssngs === nothing
         nothing
     else
-        mssngs[r .+ col.nsteps]
+        temp = mssngs[r .+ col.nsteps]
+        if nnz(temp) == 0
+            nothing
+        else
+            temp
+        end
     end
 end
 function get_missing_bdays(data::MarketData{T}, id::T, r::UnitRange{Int}, col::StatsModels.LeadLagTerm{<:Any, typeof(lag)}) where {T}
@@ -360,7 +370,12 @@ function get_missing_bdays(data::MarketData{T}, id::T, r::UnitRange{Int}, col::S
     if mssngs === nothing
         nothing
     else
-        mssngs[r .- col.nsteps]
+        temp = mssngs[r .- col.nsteps]
+        if nnz(temp) == 0
+            nothing
+        else
+            temp
+        end
     end
 end
 
@@ -438,9 +453,20 @@ end
 # Basic get functions that return a view of the
 # underlying data
 ##################################################
-
+function index_values(r, x)
+    out = zeros(Int, length(x) - sum(x))
+    j = 0
+    for i in eachindex(r, x)
+        if !x[i]
+            j += 1
+            @inbounds out[j] = r[i]
+        end
+        
+    end
+    out
+end
 Base.getindex(data::MarketData{T}, id::T, r::UnitRange, col::Symbol, missing_bdays::AbstractVector{Bool}) where {T} =
-    view(data[id, col], r[Not(missing_bdays)])
+    view(data[id, col], index_values(r, missing_bdays))
 
 Base.getindex(data::MarketData{T}, id::T, r::UnitRange, col::Symbol, ::Nothing=nothing) where {T} =
     view(data[id, col], r)
@@ -634,7 +660,7 @@ Base.getindex(data::MarketData{T}, id::T, r::Union{UnitRange, ClosedInterval{Dat
 
 function Base.getindex(data::FixedTable{N}, ::Colon, i::Int) where {N}
     @assert 1 <= i <= N "Column not in data"
-    data.data[i]
+    @inbounds data.data[i]
 end
 
 function Base.getindex(data::FixedTable{N}, i::Int, j::Int) where {N}

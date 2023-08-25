@@ -61,8 +61,15 @@ end
     select(Not(:reg))
 end
 # A little over 10 million observations
-# First Run R7 5700X: 109.141514 seconds (1.74 G allocations: 119.140 GiB, 55.24% gc time, 14.31% compilation time)
-# Second Run: 100.725154 seconds (1.70 G allocations: 123.031 GiB, 64.00% gc time, 0.22% compilation time)
+# First Run R7 5700X: 38.191368 seconds (200.79 M allocations: 55.747 GiB, 24.94% gc time, 215.70% compilation time: <1% of which was recompilation)
+# Second Run: 35.790831 seconds (182.35 M allocations: 60.448 GiB, 37.53% gc time, 1.01% compilation time)
+# changing sparsevec to vector in iteratetimelinetable reduced time by about 10 seconds
+# dealing with missing values at the start or end of a range in the setup saves another few seconds
+# changing the r[Not(missing_bdays)] to a custom function that creates the vector first saves around 30 seconds
+
+# the main cost are the cases where there is a single or short set of missing values, getting rid of those saves over 30 seconds
+# this is largely due to setting up the data where it creates a view that is noncontinuous, which means creating the entire vector
+# that way
 
 ##
 

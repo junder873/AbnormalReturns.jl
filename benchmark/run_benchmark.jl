@@ -10,8 +10,8 @@ df_events = CSV.File(joinpath("data", "event_dates.csv")) |> DataFrame
 
 ##
 @time data = MarketData(df_mkt, df_firm; id_col=:firm_id, valuecols_firms=[:ret])
-# First run R7 5700X: 16.141040 seconds (35.39 M allocations: 13.239 GiB, 14.37% gc time, 56.56% compilation time)
-# Second run R7 5700X: 5.998991 seconds (547.61 k allocations: 11.431 GiB, 29.92% gc time)
+# First run R7 5700X: 8.356466 seconds (14.89 M allocations: 11.201 GiB, 3.74% gc time, 57.41% compilation time: <1% of which was recompilation)
+# Second run R7 5700X: 4.575627 seconds (527.51 k allocations: 10.303 GiB, 19.86% gc time)
 # First run i7 6700: 31.045712 seconds (35.03 M allocations: 13.222 GiB, 32.21% gc time, 64.39% compilation time)
 # Second run i7 6700: 11.217124 seconds (537.50 k allocations: 11.431 GiB, 25.19% gc time)
 

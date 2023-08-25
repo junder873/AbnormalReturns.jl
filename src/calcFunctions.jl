@@ -292,7 +292,7 @@ function get_coefficient_val(rrs::Vector{<:RegressionModel}, coefname::String...
         if pos == 0 && !ismissing(coefnames(rr))
             pos = get_coefficient_pos(rr, coefname...)
         end
-        if pos != 0
+        if pos != 0 && !ismissing(coefnames(rr))
             out[i] = coef(rr)[pos]
         end
     end

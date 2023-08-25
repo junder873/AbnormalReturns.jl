@@ -31,9 +31,13 @@ function MarketCalendar(bdays::Vector{Date}, dtmin::Date=minimum(bdays), dtmax::
     bdays = sort(bdays)
     isbday_array = zeros(Bool, Dates.value(dtmax - dtmin)+1)
     bdayscounter_array = zeros(UInt32, length(isbday_array))
+    bdays_idx = 1
 
     for (i, d) in enumerate(dtmin:Day(1):dtmax)
-        isbday_array[i] = d ∈ bdays
+        if d == bdays[bdays_idx]
+            isbday_array[i] = true
+            bdays_idx += 1
+        end
         if i > 1
             bdayscounter_array[i] = bdayscounter_array[i-1] + isbday_array[i]
         end
@@ -68,7 +72,9 @@ end
 function BusinessDays.listbdays(hc::MarketCalendar, dt0::Date, dt1::Date)
     BusinessDays.checkbounds(hc, dt0)
     BusinessDays.checkbounds(hc, dt1)
-    hc.bdays[dt0 .<= hc.bdays .<= dt1]
+    i1 = findfirst(x -> x >= dt0, hc.bdays)
+    i2 = findlast(x -> x <= dt1, hc.bdays)
+    hc.bdays[i1:i2]
 end
 
 function date_range(hc::MarketCalendar, dates::ClosedInterval{Date})

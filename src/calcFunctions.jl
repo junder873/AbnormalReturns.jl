@@ -261,6 +261,9 @@ function Statistics.var(data::FixedTable{1}; minobs=0.8)
 end
 Statistics.var(data::IterateFixedTable{T, 1}; minobs=0.8) where {T} = var.(data; minobs)
 
+"""
+See [`var`](@ref).
+"""
 Statistics.std(data::FixedTable; minobs=0.8) = sqrt(var(data; minobs))
 Statistics.std(data::IterateFixedTable; minobs=0.8) = sqrt.(var(data; minobs))
 

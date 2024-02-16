@@ -15,6 +15,7 @@ Notable methods from [BusinessDays.jl](https://github.com/JuliaFinance/BusinessD
 
 ```@docs
 MarketData
+AbnormalReturns.all_unique_obs
 ```
 
 ## Regression Related Methods

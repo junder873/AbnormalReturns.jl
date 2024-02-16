@@ -5,7 +5,7 @@ The key to the performance in this package is the underlying data structure. The
 ## DataVector
 
 ```@docs
-DataVector
+AbnormalReturns.DataVector
 ```
 
 These structures provide strongly typed data that is easy to slice based on a range of dates. The data is always stored as `Float64`, even though it accepts elements of type `Missing`. In storing the data, `Missing` values are converted to `0.0`, and the `missing_bdays` is a `SparseVector` that is `true` when that value is missing. `dates` are the minimum and maximum dates for the data.
@@ -28,4 +28,10 @@ This struct is made up of a set of `DataVector`. The main purpose of this is to 
 
 ```@docs
 FixedTable
+```
+
+## Market Calendar
+
+```@docs
+AbnormalReturns.MarketCalendar
 ```

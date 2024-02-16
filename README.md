@@ -1,4 +1,4 @@
-[![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://junder873.github.io/AbnormalReturns.jl/dev/)
+[![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://junder873.github.io/AbnormalReturns.jl/stable/)
 [![Build status](https://github.com/junder873/AbnormalReturns.jl/workflows/CI/badge.svg)](https://github.com/junder873/AbnormalReturns.jl/actions)
 
 # AbnormalReturns.jl
